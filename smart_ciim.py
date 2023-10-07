@@ -133,8 +133,7 @@ def open_const_wp():
         date_pick_state = "disabled" if not CIIM_FOLDER_PATH else "normal"
         set_config(calendar_button, stat=date_pick_state)
 
-        create_frame = frames["Delays Creator"]
-        show_frame(create_frame)
+        show_frame(frames["Delays Creator"])
         return construction_wp_path, CIIM_FOLDER_PATH
     except InvalidFileException:
         # Handling the exception
@@ -352,7 +351,7 @@ def create_delay():
         delay_wb.save(str(delay_wb_path))
 
         status_msg = f"Delay Report {dc_tl_name} {day_folder} created!\n{day_path}"
-        messagebox.showinfo("Success!", status_msg)
+        messagebox.showinfo(None, status_msg)
 
     # ciim_passdown_path = temp_ciim_folder_path / "Pass Down/*.xlsx"
     #
@@ -447,11 +446,11 @@ def status_check():
     global status_color
 
     if (
-        start_time == 1
-        and end_time == 1
-        and reason_var == 1
-        and worker1_var == 1
-        and vehicle1_var == 1
+            start_time == 1
+            and end_time == 1
+            and reason_var == 1
+            and worker1_var == 1
+            and vehicle1_var == 1
     ):
         set_config(frame3_status, text="Completed", foreground="green")
         status_color = 1
@@ -550,7 +549,6 @@ def pick_date():
     set_config(fc_ocs_entry, state=entries_state)
     set_config(fc_scada_entry, state=entries_state)
     set_config(create_button, state=entries_state)
-    set_config(previous_day_entry, state=entries_state)
 
 
 def create_path_if_not_exists(path, label=None, message=None, **config_options):
@@ -581,10 +579,8 @@ def create_folders():
         day_created_message = (
             f"{c_year[-2:]}{c_month}{c_day} folder was created successfully"
         )
-        messagebox.showinfo("Success", day_created_message)
+        messagebox.showinfo(None, day_created_message)
 
-    previous_day_path = os.path.join(week_path, f"{p_year[-2:]}{p_month}{p_day}")
-    os.path.normpath(previous_day_path)
     fc_ciim_report_name = (
         f"CIIM Report Table {c_day}.{c_month}.{c_year[-2:]}.xlsx".strip()
     )
@@ -631,22 +627,75 @@ def create_folders():
         create_path_if_not_exists(os.path.join(day_path, folder))
 
     c_date_slash = c_date.replace(".", "/")
-    previous_date_slash = p_date.replace(".", "/")
 
     if not os.path.exists(new_report_path):
         print(f"Expected file {new_report_path} not found!")
     write_data_to_report(construction_wp_path, c_date_slash, day_path)
-    write_data_to_previous_report(
-        construction_wp_path, previous_date_slash, previous_day_path
-    )
 
     fc_ocs_entry.delete(0, END)
     fc_scada_entry.delete(0, END)
-    previous_day_entry.delete(0, END)
+
     set_config(fc_ocs_entry, state="disabled")
     set_config(fc_scada_entry, state="disabled")
     set_config(create_button, state="disabled")
-    set_config(previous_day_entry, state="disabled")
+
+    previous_year_path = create_path_if_not_exists(
+        os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}"))
+
+    previous_week_path = create_path_if_not_exists(
+        os.path.join(previous_year_path, f"Working Week N{c_week}"))
+
+    previous_day_path = create_path_if_not_exists(
+        os.path.join(previous_week_path, f"{p_year[-2:]}{p_month}{p_day}"))
+
+    # Only show the popup if previous day path exists
+    if check_path_exists(previous_day_path):  # Use the new function here
+        result = messagebox.askyesno(title=None, message=f"Copy to CIIM Report Table {p_date} as well?")
+        print(result)
+        if result is True:
+            popup_question()
+
+
+# TODO : FIX IT AND THE LOGIC
+def popup_func():
+    year_path = create_path_if_not_exists(
+        os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}")
+    )
+
+    week_path = create_path_if_not_exists(
+        os.path.join(year_path, f"Working Week N{c_week}")
+    )
+
+    day_path = create_path_if_not_exists(
+        os.path.join(week_path, f"{p_year[-2:]}{p_month}{p_day}")
+    )
+    previous_date_slash = p_date.replace(".", "/")
+    previous_day_path = os.path.join(week_path, f"{p_year[-2:]}{p_month}{p_day}")
+    os.path.normpath(previous_day_path)
+
+    write_data_to_previous_report(
+        construction_wp_path, previous_date_slash, previous_day_path
+    )
+    global top
+    if top:
+        top.destroy()
+        top = None  # Reset it to None after destroying to avoid future issues
+
+
+def popup_question():
+    global previous_day_entry, top
+    top = ttk.Toplevel(app)
+    # Assuming 'app' is the instance of your main window
+    x = app.winfo_x()
+    y = app.winfo_y()
+    top.geometry(f"+{x + 200}+{y + 100}")
+    top.title(None)
+    previous_day_label = ttk.Label(top, text="Row number")
+    previous_day_label.pack(side="left", padx=5, pady=5)
+    previous_day_entry = ttk.Entry(top, width=8)
+    previous_day_entry.pack(side="left", padx=5, pady=5)
+    previous_button = ttk.Button(top, text="Ok", command=popup_func, width=5, )
+    previous_button.pack(side="bottom", padx=5, pady=5, anchor="center")
 
 
 def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
@@ -654,7 +703,7 @@ def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
     target_datetime = pd.to_datetime(target_date, format="%d/%m/%Y", errors="coerce")
 
     if not pd.isna(
-        target_datetime
+            target_datetime
     ):  # Check if target_datetime is a valid datetime object
         # Format the target_date to DD.MM.YY
         formatted_target_date = target_datetime.strftime("%d.%m.%y")
@@ -713,7 +762,7 @@ def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
 
         for row_idx, row_data in enumerate(data[1:], start=start_row):
             for col_idx, cell_value in enumerate(
-                row_data, start=2
+                    row_data, start=2
             ):  # Column B corresponds to index 2
                 target_worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
 
@@ -745,8 +794,6 @@ def write_data_to_report(src_path, target_date, target_directory):
 
 
 def write_data_to_previous_report(src_path, target_date, target_directory):
-    global previous_day_entry
-
     user_input = (
         previous_day_entry.get().strip()
     )  # Get the user input and remove any whitespace
@@ -786,8 +833,8 @@ def show_frame(frame):
     # If the frame being shown is not "Start Page", configure the menubar
     if frame != frames["Start Page"]:
         menu_options_list = list(frames.keys())[
-            :3
-        ]  # Get only the first 3 keys from the frames dictionary
+                            :3
+                            ]  # Get only the first 3 keys from the frames dictionary
 
         menubar = Menu(app)
         app.config(menu=menubar)
@@ -810,7 +857,7 @@ def create_and_grid_label(parent, text, row, col, sticky="w", padx=None, pady=No
 
 
 def create_and_grid_entry(
-    parent, row, col, sticky=None, padx=None, pady=None, **kwargs
+        parent, row, col, sticky=None, padx=None, pady=None, **kwargs
 ):
     # Separate grid arguments from entry initialization arguments
     grid_args = {k: kwargs.pop(k) for k in ["columnspan"] if k in kwargs}
@@ -826,11 +873,6 @@ def create_and_grid_entry(
     )  # Pass the grid arguments here
     return entry
 
-def check():
-    pass
-
-def test():
-    pass
 
 # Root config
 app = ttk.Window(
@@ -860,6 +902,7 @@ c_day, c_month, c_year, c_week, p_day, p_month, p_year = (
 delays_folder_path = ""
 construction_wp_path = ""
 delay_excel_path = ""
+selected_date = None
 
 # Lists and associated data
 tl_list = []
@@ -872,6 +915,7 @@ teamLeaderNum = ""
 username = ""
 current_frame = None
 delay_excel_workbook = None
+top = None
 # Dictionary of frames
 frame_names = [
     "Delays Creator",
@@ -935,7 +979,7 @@ for name in frame_names:
 # Configuration for each frame's row and column weights
 frame_configs = {
     "Delays Creator": {"columns": [(0, 1), (1, 5)], "rows": [(0, 1), (1, 8)]},
-    "Folders Creator": {"columns": [(0, 1), (1, 5)], "rows": [(0, 1), (1, 8)]},
+    "Folders Creator": {"columns": [(0, 1), (1, 5)], "rows": [(0, 1), (1, 2)]},
     "Delays Manager": {"columns": [(1, 9)], "rows": [(0, 1), (1, 8)]},
 }
 
@@ -951,12 +995,12 @@ for frame_name, config in frame_configs.items():
 
 # Start page
 welcome_label = ttk.Label(
-    frames["Start Page"], text="Welcome to Smart CIIM!", font=("Arial", 24, "bold")
+    frames["Start Page"], text="Welcome to Smart CIIM!", font=("Helvetica", 26, "bold")
 )
 welcome_label.pack(pady=100)
 
 start_button = ttk.Button(
-    frames["Start Page"], text="Get Started", command=open_const_wp
+    frames["Start Page"], text="Get Started!", command=open_const_wp, width=20, style='success'
 )
 start_button.pack(pady=20)
 show_frame(frames["Start Page"])
@@ -1004,11 +1048,9 @@ fc_ocs_entry.config(state="disabled", width=8)
 create_and_grid_label(menu2_frame2, "SCADA works:", 2, 1, "e", 10, 20)
 fc_scada_entry = create_and_grid_entry(menu2_frame2, 2, 2, "w", 10)
 fc_scada_entry.config(state="disabled", width=8)
-create_and_grid_label(menu2_frame2, "Insert the start row number", 3, 1, None, 10, 10)
-previous_day_entry = create_and_grid_entry(menu2_frame2, 3, 2, "w", 10)
-previous_day_entry.config(state="disabled", width=8)
+
 create_button = ttk.Button(
-    menu2_frame2, text="Create", command=create_folders, state="disabled", width=8
+    menu2_frame2, text="Create", command=on_create_button_click, state="disabled", width=8
 )
 create_button.grid(row=4, column=2, sticky="es", pady=10)
 
@@ -1093,7 +1135,6 @@ create_and_grid_label(menu3_frame4, "", 12, 1, "we")
 # Vehicles
 create_and_grid_label(menu3_frame4, "      Vehicles", 4, 2, "e")
 frame4_v1_entry = create_and_grid_entry(menu3_frame4, 4, 3, "e")
-
 
 # check boxes
 frame4_workers_var = IntVar()
