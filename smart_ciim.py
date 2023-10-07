@@ -45,9 +45,7 @@ def open_delays_folder():
 
     # Constructing the initial path for the filedialog
     paths = define_related_paths()  # Get the Paths dictionary
-    delays_path = paths[
-        "delays"
-    ]  # Get \CIIM test\General Updates\Delays+Cancelled works
+    delays_path = paths["delays"]
     today = datetime.date.today()  # Get today's date
     current_year = today.year  # Get the current year
     current_week_number = today.isocalendar()[
@@ -77,9 +75,9 @@ def open_delays_folder():
 
     if not pattern.match(folder_name):
         messagebox.showerror(
-            "Error", "Please select a folder with the pattern DD.MM.YY"
+            "Error", "Please select a folder with the pattern dd.mm.yy"
         )
-        return
+        return  # exits
 
     tl_list = []
     tl_list_internal = os.listdir(delays_folder_path)
@@ -500,55 +498,11 @@ def check_path_exists(path):
             print(f"Path exists: {path}")
             return True
         else:
-            print(f"Path does NOT exist: {path}")
+            print(f"Path does not exist : {path}")
             return False
     except Exception as e:
         print(f"An error occurred while checking the path: {e}")
         return False
-
-
-def pick_date():
-    global c_day, c_month, c_year, c_date, c_week, c_date, p_date, p_day, p_month, p_year
-    cal = Querybox()
-
-    selected_date = cal.get_date(bootstyle="danger")
-    c_day = selected_date.strftime("%d")
-    c_month = selected_date.strftime("%m")
-    c_year = selected_date.strftime("%Y")
-    c_date = selected_date.strftime("%d.%m.%Y")
-    ts = pd.Timestamp(selected_date)
-
-    # Calculate previous date which is a day before c_date
-    p_date_datetime = selected_date - timedelta(days=1)
-    p_date = p_date_datetime.strftime("%d.%m.%Y")
-    p_day = p_date_datetime.strftime("%d")
-    p_month = p_date_datetime.strftime("%m")
-    p_year = p_date_datetime.strftime("%Y")
-    print(p_date)
-    (iso_year, c_week, iso_weekday) = ts.isocalendar()
-    if iso_weekday == 7:
-        c_week += 1
-
-    # Using the button's text  to provide feedback
-    calendar_button.config(text=f"WW: {c_week}     Date: {c_date} ")
-
-    c_week = str(c_week).zfill(2)  # Add leading zero if necessary
-
-    week_path = os.path.join(
-        CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}"
-    )
-    day_path = os.path.join(week_path, f"{c_year[-2:]}{c_month}{c_day}")
-    print(week_path)
-    print(day_path)
-
-    day_message_exist = f"{c_year[-2:]}{c_month}{c_day} folder already exists"
-    if os.path.exists(day_path):
-        messagebox.showerror("Error", day_message_exist)
-
-    entries_state = "disabled" if os.path.exists(day_path) else "normal"
-    set_config(fc_ocs_entry, state=entries_state)
-    set_config(fc_scada_entry, state=entries_state)
-    set_config(create_button, state=entries_state)
 
 
 def create_path_if_not_exists(path, label=None, message=None, **config_options):
@@ -561,60 +515,112 @@ def create_path_if_not_exists(path, label=None, message=None, **config_options):
     return path
 
 
+def derive_paths_from_date(selected_date):
+    """Derive all related paths from a given date including multiple date formats."""
+    c_day, c_month, c_year = [selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+    p_date_datetime = selected_date - timedelta(days=1)
+    p_day, p_month, p_year = [p_date_datetime.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+
+    c_week = selected_date.strftime("%U")  # returns the week number considering the first day of the week as Sunday
+
+    c_formatted_dates = {
+        "slash": f"{c_day}/{c_month}/{c_year[-2:]}",
+        "dot": f"{c_day}.{c_month}.{c_year[-2:]}",
+        "compact": f"{c_year[-2:]}{c_month}{c_day}"
+    }
+
+    p_formatted_dates = {
+        "slash": f"{p_day}/{p_month}/{p_year[-2:]}",
+        "dot": f"{p_day}.{p_month}.{p_year[-2:]}",
+        "compact": f"{p_year[-2:]}{p_month}{p_day}"
+    }
+
+    paths = {
+        "year": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}"),
+        "week": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}"),
+        "day": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}",
+                            f"{c_year[-2:]}{c_month}{c_day}"),
+        "previous_year": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}"),
+        "previous_week": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}", f"Working Week N{c_week}"),
+        "previous_day": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}", f"Working Week N{c_week}",
+                                     f"{p_year[-2:]}{p_month}{p_day}"),
+    }
+
+    # Normalize the paths
+    for key, value in paths.items():
+        paths[key] = os.path.normpath(value)
+
+    return paths, c_formatted_dates, p_formatted_dates
+
+
+def pick_date():
+    global selected_date
+    cal = Querybox()
+    selected_date = cal.get_date(bootstyle="danger")
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
+
+    # Feedback using button's text
+    calendar_button.config(text=f"WW: {selected_date.strftime('%U')}     Date: {selected_date.strftime('%d.%m.%Y')} ")
+
+    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
+    if os.path.exists(paths["day"]):
+        messagebox.showerror("Error", day_message_exist)
+
+    entries_state = "disabled" if os.path.exists(c_formatted_dates["compact"]) else "normal"
+    set_config(fc_ocs_entry, state=entries_state)
+    set_config(fc_scada_entry, state=entries_state)
+    set_config(create_button, state=entries_state)
+
+    return paths
+
+
 def create_folders():
-    paths_dict = define_related_paths()
+    # Importing the paths and the formatted dates
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
+    main_paths = define_related_paths()
 
-    year_path = create_path_if_not_exists(
-        os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}")
-    )
+    create_path_if_not_exists(paths["year"])
+    create_path_if_not_exists(paths["week"])
+    create_path_if_not_exists(paths["day"])
 
-    week_path = create_path_if_not_exists(
-        os.path.join(year_path, f"Working Week N{c_week}")
-    )
-
-    day_path = create_path_if_not_exists(
-        os.path.join(week_path, f"{c_year[-2:]}{c_month}{c_day}")
-    )
-    if os.path.exists(day_path):
+    if os.path.exists(paths["day"]):
         day_created_message = (
-            f"{c_year[-2:]}{c_month}{c_day} folder was created successfully"
+            f'{c_formatted_dates["compact"]} folder was created successfully'
         )
         messagebox.showinfo(None, day_created_message)
 
     fc_ciim_report_name = (
-        f"CIIM Report Table {c_day}.{c_month}.{c_year[-2:]}.xlsx".strip()
+        f'CIIM Report Table {c_formatted_dates["dot"]}.xlsx'.strip()
     )
-
     print(f"Generated report name: {fc_ciim_report_name}")
 
-    templates_path = Path(paths_dict["templates"])
+    templates_path = Path(main_paths["templates"])
     fc_ciim_template_path = os.path.join(templates_path, "CIIM Report Table v.1.xlsx")
 
     # Copy and rename
-    print(f"Copying template to: {day_path}")
-    shutil.copy(fc_ciim_template_path, day_path)
+    print(f'Copying template to: {paths["day"]}')
+    shutil.copy(fc_ciim_template_path, paths["day"])
 
-    new_report_path = os.path.join(day_path, fc_ciim_report_name)
+    new_report_path = os.path.join(paths["day"], fc_ciim_report_name)
     print(f"Renaming file to: {new_report_path}")
-    if os.path.exists(os.path.join(day_path, "CIIM Report Table v.1.xlsx")):
-        os.rename(os.path.join(day_path, "CIIM Report Table v.1.xlsx"), new_report_path)
-
+    if os.path.exists(os.path.join(paths["day"], "CIIM Report Table v.1.xlsx")):
+        os.rename(os.path.join(paths["day"], "CIIM Report Table v.1.xlsx"), new_report_path)
         # Print the list of files in the directory for verification
         print("Files in directory after renaming:")
-        print(os.listdir(day_path))
+        print(os.listdir(paths["day"]))
 
         # Introduce a slight delay
         time.sleep(1)
     else:
-        print(f"Template not found in {day_path}!")
+        print(f'Template not found in {paths["day"]}!')
 
     for i in range(int(fc_ocs_entry.get() or 0)):
-        create_path_if_not_exists(os.path.join(day_path, f"W{i + 1}", "Pictures"))
-        create_path_if_not_exists(os.path.join(day_path, f"W{i + 1}", "Worklogs"))
+        create_path_if_not_exists(os.path.join(paths["day"], f"W{i + 1}", "Pictures"))
+        create_path_if_not_exists(os.path.join(paths["day"], f"W{i + 1}", "Worklogs"))
 
     for i in range(int(fc_scada_entry.get() or 0)):
-        create_path_if_not_exists(os.path.join(day_path, f"S{i + 1}", "Pictures"))
-        create_path_if_not_exists(os.path.join(day_path, f"S{i + 1}", "Worklogs"))
+        create_path_if_not_exists(os.path.join(paths["day"], f"S{i + 1}", "Pictures"))
+        create_path_if_not_exists(os.path.join(paths["day"], f"S{i + 1}", "Worklogs"))
 
     folders_to_create = [
         "Foreman",
@@ -624,13 +630,7 @@ def create_folders():
         "Worklogs",
     ]
     for folder in folders_to_create:
-        create_path_if_not_exists(os.path.join(day_path, folder))
-
-    c_date_slash = c_date.replace(".", "/")
-
-    if not os.path.exists(new_report_path):
-        print(f"Expected file {new_report_path} not found!")
-    write_data_to_report(construction_wp_path, c_date_slash, day_path)
+        create_path_if_not_exists(os.path.join(paths["day"], folder))
 
     fc_ocs_entry.delete(0, END)
     fc_scada_entry.delete(0, END)
@@ -639,42 +639,27 @@ def create_folders():
     set_config(fc_scada_entry, state="disabled")
     set_config(create_button, state="disabled")
 
-    previous_year_path = create_path_if_not_exists(
-        os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}"))
+    #
+    if os.path.dirname(construction_wp_path) != paths["week"]:
+        print("Not copying works to the selected date")
+        return
 
-    previous_week_path = create_path_if_not_exists(
-        os.path.join(previous_year_path, f"Working Week N{c_week}"))
-
-    previous_day_path = create_path_if_not_exists(
-        os.path.join(previous_week_path, f"{p_year[-2:]}{p_month}{p_day}"))
+    write_data_to_report(construction_wp_path, c_formatted_dates["slash"], paths["day"])
 
     # Only show the popup if previous day path exists
-    if check_path_exists(previous_day_path):  # Use the new function here
-        result = messagebox.askyesno(title=None, message=f"Copy to CIIM Report Table {p_date} as well?")
+    if check_path_exists(paths["previous_day"]):  # Use the new function here
+        result = messagebox.askyesno(title=None,
+                                     message=f'Copy to CIIM Report Table {p_formatted_dates["dot"]} as well?')
         print(result)
         if result is True:
             popup_question()
 
 
-# TODO : FIX IT AND THE LOGIC
 def popup_func():
-    year_path = create_path_if_not_exists(
-        os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}")
-    )
-
-    week_path = create_path_if_not_exists(
-        os.path.join(year_path, f"Working Week N{c_week}")
-    )
-
-    day_path = create_path_if_not_exists(
-        os.path.join(week_path, f"{p_year[-2:]}{p_month}{p_day}")
-    )
-    previous_date_slash = p_date.replace(".", "/")
-    previous_day_path = os.path.join(week_path, f"{p_year[-2:]}{p_month}{p_day}")
-    os.path.normpath(previous_day_path)
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
 
     write_data_to_previous_report(
-        construction_wp_path, previous_date_slash, previous_day_path
+        construction_wp_path, p_formatted_dates["slash"], paths["previous_day"]
     )
     global top
     if top:
@@ -700,32 +685,23 @@ def popup_question():
 
 def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
     # Convert target_date string to datetime object
-    target_datetime = pd.to_datetime(target_date, format="%d/%m/%Y", errors="coerce")
+    target_datetime = pd.to_datetime(target_date, format="%d/%m/%y", errors="coerce")
 
     if not pd.isna(
             target_datetime
     ):  # Check if target_datetime is a valid datetime object
-        # Format the target_date to DD.MM.YY
+
         formatted_target_date = target_datetime.strftime("%d.%m.%y")
-
-        # Construct the report filename
         report_filename = f"CIIM Report Table {formatted_target_date}.xlsx"
-
-        # Combine the directory path with the filename to get the complete path
         target_report_path = os.path.join(target_directory, report_filename)
-
         print(f"Creating : {report_filename} at {target_directory}")
 
-        if os.path.exists(src_path):
-            df = pd.read_excel(
-                src_path,
-                sheet_name="Const. Plan",
-                skiprows=1,
-                usecols="B:J, K:N, P, R:S, U, AF",
-            )
-        else:
-            print(f"File not found: {src_path}")
-            return
+        df = pd.read_excel(
+            src_path,
+            sheet_name="Const. Plan",
+            skiprows=1,
+            usecols="B:J, K:N, P, R:S, U, AF",
+        )
 
         new_column_order = [
             0,
@@ -751,10 +727,6 @@ def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
 
         # Filter rows where the date matches target_date
         target_df = df[df["Date [DD/MM/YY]"] == target_datetime]
-
-        if not os.path.exists(target_report_path):
-            print(f"Report file does not exist: {target_report_path}")
-            return
 
         target_workbook = load_workbook(filename=target_report_path)
         target_worksheet = target_workbook.active
@@ -794,16 +766,8 @@ def write_data_to_report(src_path, target_date, target_directory):
 
 
 def write_data_to_previous_report(src_path, target_date, target_directory):
-    user_input = (
-        previous_day_entry.get().strip()
-    )  # Get the user input and remove any whitespace
-
-    # Check if the input is empty or not a number
-    if not user_input.isdigit():
-        print(f"Not editing {p_date}")
-        return  # Exit the function
-
-    start_row = int(user_input)  # Convert user input to integer
+    user_input = (previous_day_entry.get())
+    start_row = int(user_input)
 
     write_data_to_excel(src_path, target_date, target_directory, start_row=start_row)
 
@@ -888,22 +852,11 @@ status_color = IntVar()
 previous_day_entry = IntVar()
 day, month, year = StringVar(), StringVar(), StringVar()
 start_time, end_time, reason_var, worker1_var, vehicle1_var = 0, 0, 0, 0, 0
-c_date, p_date = "", ""
-c_day, c_month, c_year, c_week, p_day, p_month, p_year = (
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-    None,
-)
 # File and folder paths
 delays_folder_path = ""
 construction_wp_path = ""
 delay_excel_path = ""
 selected_date = None
-
 # Lists and associated data
 tl_list = []
 cp_dates = []
@@ -912,8 +865,6 @@ tl_index = []
 # Miscellaneous variables
 dc_tl_name = ""
 teamLeaderNum = ""
-username = ""
-current_frame = None
 delay_excel_workbook = None
 top = None
 # Dictionary of frames
@@ -1050,7 +1001,7 @@ fc_scada_entry = create_and_grid_entry(menu2_frame2, 2, 2, "w", 10)
 fc_scada_entry.config(state="disabled", width=8)
 
 create_button = ttk.Button(
-    menu2_frame2, text="Create", command=on_create_button_click, state="disabled", width=8
+    menu2_frame2, text="Create", command=create_folders, state="disabled", width=8
 )
 create_button.grid(row=4, column=2, sticky="es", pady=10)
 
