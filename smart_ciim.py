@@ -629,7 +629,7 @@ def create_folders():
         print("Not copying works to the selected date")
         return
 
-    write_data_to_report(construction_wp_path, c_formatted_dates["slash"], paths["day"])
+    write_data_to_report(construction_wp_path, c_formatted_dates["slash"], paths["day"], TO_DAILY_REPORT_MAPPINGS)
 
     # Only show the popup if previous day path exists
     if check_path_exists(paths["previous_day"]):  # Use the new function here
@@ -644,7 +644,7 @@ def popup_func():
     paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
 
     write_data_to_previous_report(
-        construction_wp_path, p_formatted_dates["slash"], paths["previous_day"]
+        construction_wp_path, p_formatted_dates["slash"], paths["previous_day"], TO_DAILY_REPORT_MAPPINGS
     )
     global top
     if top:
@@ -668,109 +668,73 @@ def popup_question():
     previous_button.pack(side="bottom", padx=5, pady=5, anchor="center")
 
 
-def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
-    # Convert target_date string to datetime object
+# Utility Functions
+def filter_by_date(df, date_column, target_date):
+    """Filter a DataFrame based on a target date."""
+    return df[df[date_column] == target_date]
+
+
+def format_datetime_column(worksheet, column_idx, row_start, row_end):
+    """Format datetime column in an openpyxl worksheet."""
+    for row_idx in range(row_start, row_end + 1):
+        cell_value = worksheet.cell(row=row_idx, column=column_idx).value
+        # Format the cell_value here ...
+
+
+def format_observations_column(worksheet, column_idx, row_start, row_end):
+    """Handle the observations column in an openpyxl worksheet."""
+    for row_idx in range(row_start, row_end + 1):
+        cell_value = worksheet.cell(row=row_idx, column=column_idx).value
+        # Handle the cell_value here ...
+
+
+def write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=4):
     target_datetime = pd.to_datetime(target_date, format="%d/%m/%y", errors="coerce")
+    formatted_target_date = target_datetime.strftime("%d.%m.%y")
+    report_filename = f"CIIM Report Table {formatted_target_date}.xlsx"
+    target_report_path = os.path.join(target_directory, report_filename)
 
-    if not pd.isna(
-            target_datetime
-    ):  # Check if target_datetime is a valid datetime object
+    # Using mappings to determine columns to load
+    usecols_value = [mappings[header] for header in mappings.keys()]
+    df = pd.read_excel(src_path, sheet_name="Const. Plan", skiprows=1, usecols=usecols_value)
 
-        formatted_target_date = target_datetime.strftime("%d.%m.%y")
-        report_filename = f"CIIM Report Table {formatted_target_date}.xlsx"
-        target_report_path = os.path.join(target_directory, report_filename)
-        print(f"Creating : {report_filename} at {target_directory}")
+    # Filter data
+    target_df = filter_by_date(df, "Date [DD/MM/YY]", target_datetime)
 
-        df = pd.read_excel(
-            src_path,
-            sheet_name="Const. Plan",
-            skiprows=1,
-            usecols="B:J, K:N, P, R:S, U, AF",
-        )
+    # Write to target workbook
+    target_workbook = load_workbook(filename=target_report_path)
+    target_worksheet = target_workbook.active
 
-        new_column_order = [
-            0,
-            1,
-            2,
-            3,
-            4,
-            5,
-            6,
-            7,
-            8,
-            16,
-            9,
-            10,
-            11,
-            12,
-            13,
-            14,
-            15,
-            17,
-        ]
-        df = df.iloc[:, new_column_order]
+    # Write headers (using the mappings keys as headers)
+    for col, header in enumerate(mappings.keys(), 2):  # Starting from column B
+        target_worksheet.cell(row=start_row - 1, column=col, value=header)
 
-        # Filter rows where the date matches target_date
-        target_df = df[df["Date [DD/MM/YY]"] == target_datetime]
+    # Write data
+    for row_idx, (index, row_data) in enumerate(target_df.iterrows(), start=start_row):
+        for col_idx, header in enumerate(mappings.keys(), 2):  # Starting from column B
+            target_worksheet.cell(row=row_idx, column=col_idx, value=row_data[header])
 
-        target_workbook = load_workbook(filename=target_report_path)
-        target_worksheet = target_workbook.active
-        data = [target_df.columns.tolist()] + target_df.values.tolist()
+    # Format Date column
+    date_col_idx = list(mappings.keys()).index("Date [DD/MM/YY]") + 2
+    format_datetime_column(target_worksheet, date_col_idx, start_row, target_worksheet.max_row)
 
-        for row_idx, row_data in enumerate(data[1:], start=start_row):
-            for col_idx, cell_value in enumerate(
-                    row_data, start=2
-            ):  # Column B corresponds to index 2
-                target_worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
+    # Format Observations column (assuming "Observations" is always a key in your mappings)
+    observations_col_idx = list(mappings.keys()).index("Observations") + 2
+    format_observations_column(target_worksheet, observations_col_idx, start_row, target_worksheet.max_row)
 
-        # Iterate through columns D and S starting from row 4
-        for row_idx in range(4, target_worksheet.max_row + 1):
-            # Handle column D
-            d_cell_value = target_worksheet.cell(row=row_idx, column=4).value  # Column D corresponds to index 4
-
-            if isinstance(d_cell_value, pd.Timestamp):
-                date_obj = d_cell_value.to_pydatetime()  # Convert to native datetime object
-            else:
-                try:
-                    date_obj = datetime.strptime(str(d_cell_value), "%d/%m/%y")
-                except ValueError:
-                    try:
-                        date_obj = datetime.strptime(str(d_cell_value), "%d/%m/%Y")
-                    except ValueError:
-                        date_obj = None  # Not a valid date string
-
-            if date_obj:
-                formatted_date = date_obj.strftime("%d/%m/%Y")
-                target_worksheet.cell(row=row_idx, column=4, value=formatted_date)
-
-            # Handle column S
-            s_cell_value = target_worksheet.cell(row=row_idx, column=19).value  # Column S corresponds to index 19
-
-            if isinstance(s_cell_value, float):
-                s_cell_value = str(s_cell_value)
-            if s_cell_value and re.search(r"Need.*", s_cell_value):
-                target_worksheet.cell(
-                    row=row_idx,
-                    column=19,
-                    value="Work Details:\n- TL arrived to the field.\n- TL sent toolbox.\nSummary:",
-                )
-
-        target_workbook.save(target_report_path)
-
-        print(f"Report for {formatted_target_date} has been updated and saved.")
-    else:
-        print(f"Invalid target_datetime: {target_date}")
+    target_workbook.save(target_report_path)
+    print(f"Report for {formatted_target_date} has been updated and saved.")
 
 
-def write_data_to_report(src_path, target_date, target_directory):
-    write_data_to_excel(src_path, target_date, target_directory)
+def write_data_to_report(src_path, target_date, target_directory, mappings):
+    write_data_to_excel(src_path, target_date, target_directory, mappings)
 
 
-def write_data_to_previous_report(src_path, target_date, target_directory):
+def write_data_to_previous_report(src_path, target_date, target_directory, mappings):
     user_input = (previous_day_entry.get())
     start_row = int(user_input)
 
-    write_data_to_excel(src_path, target_date, target_directory, start_row=start_row)
+    write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=start_row)
 
 
 def refresh_delays_folder():
@@ -888,6 +852,63 @@ TIME_COLUMNS = [
     "Difference",
     "Actual work time",
 ]
+
+CONSTRUCTION_WP_HEADERS = [
+    "Discipline [OCS/Old Bridges/TS/SCADA & COM]",
+    "WW [Nº]",
+    "Date [DD/MM/YY]",
+    "T.P Start [Time]",
+    "T.P End [Time]",
+    "T.P Start [K.P]",
+    "T.P End [K.P]",
+    "EP#",
+    "ISR Start Section [Name]",
+    "ISR  End Section [Name]",
+    "Foremen [Israel]",
+    "Team Name",
+    "Team Leader Name (Phone)",
+    "Work Description (Baseline)",
+    "ISR Safety Request",
+    "ISR Comm&Rail:",
+    "ISR T.P request (All/Track number)",
+    "Observations"
+]
+HEADER_TO_INDEX = {header: index for index, header in enumerate(CONSTRUCTION_WP_HEADERS)}
+# All the Headers from the Construction Work Plan match the CIIM Report Table
+TO_DAILY_REPORT_MAPPINGS = {
+    header: header for header in CONSTRUCTION_WP_HEADERS}
+
+DAILY_REPORT_HEADERS = [
+    "WW [Nº]",
+    "Discipline [OCS/Old Bridges/TS/SCADA & COM]",
+    "Date [DD/MM/YY]",
+    "Delay details (comments + description)",
+    "Team Name",
+    "Team Leader Name (Phone)",
+    "EP",
+    "T.P Start [Time]",
+    "Actual Start Time (TL):",
+    "T.P End [Time]",
+    "Actual Finish Time (TL):",
+    "Number of workers",
+    "Work Description",
+    "Observations"
+]
+DAILY_REPORT_HEADERS = {header: index for index, header in enumerate(DAILY_REPORT_HEADERS)}
+TO_WEEKLY_DELAY_MAPPINGS = {
+    "WW [Nº]": "WW",
+    "Discipline [OCS/Old Bridges/TS/SCADA & COM]": "Discipline [OCS, Scada, TS]",
+    "Delay details (comments + description)": "Reason",
+    "Date [DD/MM/YY]": "Date",
+    "Team Name": "Team Name",
+    "Team Leader Name (Phone)": "Team leader ",
+    "EP": "ISR section {EP}",
+    "T.P Start [Time]": "TP Start Time (TAK)",
+    "Actual Start Time (TL):": "Actual Start Time (Real Start time - TL)",
+    "T.P End [Time]": "TP Finish Time (TAK)",
+    "Actual Finish Time (TL):": "Actual Finish Time (Real Finish time - TL)",
+    "Number of workers": "Workers"
+}
 # Centralized list of entries and their configurations
 ENTRIES_CONFIG = {
     "frame4_stime_entry": {
