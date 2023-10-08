@@ -311,3 +311,34 @@ def write_data_to_previous_report(src_path, target_date, target_directory):
     start_row = int(user_input)  # Convert user input to integer
 
     write_data_to_excel(src_path, target_date, target_directory, start_row=start_row)
+
+    # Those TLs won't appear in the Listbox that creates delays
+    tl_blacklist = [
+        "Eliyau Ben Zgida",
+        "Emerson Gimenes Freitas",
+        "Emilio Levy",
+        "Samuel Lakko",
+        "Ofer Akian",
+        "Wissam Hagay",
+        "Rami Arami",
+    ]
+
+    combo_selected_date = pd.Timestamp(dates_combobox.get())
+    day, month, year = [combo_selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+
+    week = combo_selected_date.strftime("%U")  # returns the week number considering the first day of the week as Sunday
+
+    construction_wp_workbook = load_workbook(
+        filename=construction_wp_path, data_only=True
+    )
+    construction_wp_worksheet = construction_wp_workbook["Const. Plan"]
+
+    team_leaders_list, tl_index = get_filtered_team_leaders(
+        construction_wp_worksheet, combo_selected_date, tl_blacklist
+    )
+
+    dc_tl_listbox.delete(0, END)
+    for tl_name in team_leaders_list:
+        dc_tl_listbox.insert(END, tl_name)
+
+    construction_wp_workbook.close()

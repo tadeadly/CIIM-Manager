@@ -9,8 +9,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 from ttkbootstrap.dialogs import Querybox
 import ttkbootstrap as ttk
-import datetime
-from datetime import timedelta
+from datetime import timedelta, datetime, date
 import time
 from typing import Optional
 from openpyxl.utils.exceptions import InvalidFileException
@@ -46,7 +45,7 @@ def open_delays_folder():
     # Constructing the initial path for the filedialog
     paths = define_related_paths()  # Get the Paths dictionary
     delays_path = paths["delays"]
-    today = datetime.date.today()  # Get today's date
+    today = date.today()  # Get today's date
     current_year = today.year  # Get the current year
     current_week_number = today.isocalendar()[
         1
@@ -142,17 +141,19 @@ def update_combo_list():
     dates_combobox["values"] = cp_dates
 
 
-def get_filtered_team_leaders(construction_wp_worksheet, selected_date, tl_blacklist):
+def get_filtered_team_leaders(construction_wp_worksheet, date):
+    global TL_BLACKLIST
+
     maxrow = construction_wp_worksheet.max_row
     team_leaders_list, tl_index = [], []
 
     for i in range(3, maxrow):
         cell_obj = construction_wp_worksheet.cell(row=i, column=4)
-        if pd.Timestamp(cell_obj.value) == selected_date:
+        if pd.Timestamp(cell_obj.value) == date:
             tl_cell_value = construction_wp_worksheet.cell(row=i, column=13).value
             if tl_cell_value:
                 tl_name = re.sub("[-0123456789)(.]", "", str(tl_cell_value)).strip()
-                if tl_name not in tl_blacklist:
+                if tl_name not in TL_BLACKLIST:
                     team_leaders_list.append(tl_name)
                     tl_index.append(i)
 
@@ -160,25 +161,11 @@ def get_filtered_team_leaders(construction_wp_worksheet, selected_date, tl_black
 
 
 def combo_selected(event):
-    global year, month, day, tl_index, cp_dates
+    global year, month, week, day, tl_index
 
-    # Those TLs won't appear in the Listbox that creates delays
-    tl_blacklist = [
-        "Eliyau Ben Zgida",
-        "Emerson Gimenes Freitas",
-        "Emilio Levy",
-        "Samuel Lakko",
-        "Ofer Akian",
-        "Wissam Hagay",
-        "Rami Arami",
-    ]
-
-    selected_date = pd.Timestamp(dates_combobox.get())
-    day, month, year = (
-        selected_date.strftime("%d"),
-        selected_date.strftime("%m"),
-        selected_date.strftime("%Y"),
-    )
+    combo_selected_date = pd.Timestamp(dates_combobox.get())
+    day, month, year = [combo_selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+    week = combo_selected_date.strftime("%U")
 
     construction_wp_workbook = load_workbook(
         filename=construction_wp_path, data_only=True
@@ -186,7 +173,7 @@ def combo_selected(event):
     construction_wp_worksheet = construction_wp_workbook["Const. Plan"]
 
     team_leaders_list, tl_index = get_filtered_team_leaders(
-        construction_wp_worksheet, selected_date, tl_blacklist
+        construction_wp_worksheet, combo_selected_date
     )
 
     dc_tl_listbox.delete(0, END)
@@ -194,6 +181,8 @@ def combo_selected(event):
         dc_tl_listbox.insert(END, tl_name)
 
     construction_wp_workbook.close()
+    print(day, month, year)
+    print(f'WW{week}')
 
 
 def go(event):
@@ -213,12 +202,11 @@ def open_delay_file(delays):
 
 
 def dc_tl_selected(event):
-    global dc_tl_name, teamLeaderNum
+    global dc_tl_name, tl_num
     dc_listbox_selection_index = dc_tl_listbox.curselection()
     dc_tl_listbox.itemconfig(dc_listbox_selection_index, bg="#ED969D")
     dc_tl_name = str(dc_tl_listbox.get(dc_listbox_selection_index))
-    teamLeaderNum = tl_index[dc_listbox_selection_index[0]]
-    print(f"Creating Delay Report {dc_tl_name}")
+    tl_num = tl_index[dc_listbox_selection_index[0]]
     create_delay()
 
 
@@ -304,13 +292,10 @@ def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_num):
 
 def create_delay():
     paths_dict = define_related_paths()
-    week_num = os.path.dirname(construction_wp_path)[-2:]
-    print(f"WW {week_num}")
-
     dc_delays_f_path = Path(paths_dict["delays"])
 
     year_path = dc_delays_f_path / year
-    week_path = year_path / f"WW{week_num}"
+    week_path = year_path / f"WW{week}"
     day_folder = f"{day}.{month}.{year[2:]}"
     day_path = week_path / day_folder
 
@@ -328,8 +313,9 @@ def create_delay():
             f"Delay Report {dc_tl_name} {day_folder} already exists!\n{day_path}"
         )
         messagebox.showerror("Error", status_msg)
-        print("Delay already exists!")
+        print(f"Delay Report {dc_tl_name} already exists!")
     else:
+        print(f"Creating Delay Report {dc_tl_name}")
         copy_and_rename_template(
             Path(paths_dict["templates"]) / delay_report_template,
             day_path,
@@ -338,13 +324,11 @@ def create_delay():
 
         cp_wb = load_workbook(filename=construction_wp_path)
         cp_ws = cp_wb["Const. Plan"]
-
         delay_wb = load_workbook(filename=delay_wb_path)
-
         delay_ws = delay_wb["Sheet1"]
 
-        copy_from_cp_to_delay(cp_ws, delay_ws, teamLeaderNum, day_folder)
-        fill_delay_ws_cells(delay_ws, cp_ws, teamLeaderNum)
+        copy_from_cp_to_delay(cp_ws, delay_ws, tl_num, day_folder)
+        fill_delay_ws_cells(delay_ws, cp_ws, tl_num)
 
         delay_wb.save(str(delay_wb_path))
 
@@ -423,6 +407,7 @@ def load_from_excel():
 
 
 def save_to_excel():
+    global delay_excel_workbook
     full_file_path = os.path.join(delays_folder_path, f"{team_leader_name}.xlsx")
     delay_excel_workbook = load_workbook(filename=full_file_path)
     delay_excel_worksheet = delay_excel_workbook["Sheet1"]
@@ -738,16 +723,32 @@ def write_data_to_excel(src_path, target_date, target_directory, start_row=4):
             ):  # Column B corresponds to index 2
                 target_worksheet.cell(row=row_idx, column=col_idx, value=cell_value)
 
-        # Iterate through column S starting from row 4
+        # Iterate through columns D and S starting from row 4
         for row_idx in range(4, target_worksheet.max_row + 1):
-            cell_value = target_worksheet.cell(
-                row=row_idx, column=19
-            ).value  # Column S corresponds to index 19
-            if isinstance(cell_value, float):
-                # Convert float value to a string
-                cell_value = str(cell_value)
-            if cell_value and re.search(r"Need.*", cell_value):
-                # Replace the cell content with text
+            # Handle column D
+            d_cell_value = target_worksheet.cell(row=row_idx, column=4).value  # Column D corresponds to index 4
+
+            if isinstance(d_cell_value, pd.Timestamp):
+                date_obj = d_cell_value.to_pydatetime()  # Convert to native datetime object
+            else:
+                try:
+                    date_obj = datetime.strptime(str(d_cell_value), "%d/%m/%y")
+                except ValueError:
+                    try:
+                        date_obj = datetime.strptime(str(d_cell_value), "%d/%m/%Y")
+                    except ValueError:
+                        date_obj = None  # Not a valid date string
+
+            if date_obj:
+                formatted_date = date_obj.strftime("%d/%m/%Y")
+                target_worksheet.cell(row=row_idx, column=4, value=formatted_date)
+
+            # Handle column S
+            s_cell_value = target_worksheet.cell(row=row_idx, column=19).value  # Column S corresponds to index 19
+
+            if isinstance(s_cell_value, float):
+                s_cell_value = str(s_cell_value)
+            if s_cell_value and re.search(r"Need.*", s_cell_value):
                 target_worksheet.cell(
                     row=row_idx,
                     column=19,
@@ -850,8 +851,9 @@ CIIM_FOLDER_PATH: Optional[str] = None
 team_leader_name = ""
 status_color = IntVar()
 previous_day_entry = IntVar()
-day, month, year = StringVar(), StringVar(), StringVar()
+day, month, week, year = StringVar(), StringVar(), StringVar(), StringVar()
 start_time, end_time, reason_var, worker1_var, vehicle1_var = 0, 0, 0, 0, 0
+combo_selected_date = ""
 # File and folder paths
 delays_folder_path = ""
 construction_wp_path = ""
@@ -864,17 +866,19 @@ tl_list_internal = []
 tl_index = []
 # Miscellaneous variables
 dc_tl_name = ""
-teamLeaderNum = ""
+tl_num = ""
 delay_excel_workbook = None
 top = None
-# Dictionary of frames
-frame_names = [
-    "Delays Creator",
-    "Folders Creator",
-    "Delays Manager",
-    "Start Page",
+# Those TLs won't appear in the Listbox that creates delays
+TL_BLACKLIST = [
+    "Eliyau Ben Zgida",
+    "Emerson Gimenes Freitas",
+    "Emilio Levy",
+    "Samuel Lakko",
+    "Ofer Akian",
+    "Wissam Hagay",
+    "Rami Arami",
 ]
-frames = {}
 # EXCEL TO CSV Columns to copy
 TIME_COLUMNS = [
     "T.P Start [Time]",
@@ -922,7 +926,14 @@ WORKER_ENTRIES = [
     "frame4_w7_entry",
     "frame4_w8_entry",
 ]
-
+# Dictionary of frames
+frame_names = [
+    "Delays Creator",
+    "Folders Creator",
+    "Delays Manager",
+    "Start Page",
+]
+frames = {}
 # Frames
 for name in frame_names:
     frames[name] = ttk.Frame(app, name=name.lower())
