@@ -13,7 +13,8 @@ from datetime import timedelta, datetime, date
 import time
 from typing import Optional
 from openpyxl.utils.exceptions import InvalidFileException
-from tkinter import messagebox
+from tkinter import simpledialog, messagebox
+
 
 
 def define_related_paths():
@@ -74,7 +75,7 @@ def open_delays_folder():
 
     if not pattern.match(folder_name):
         messagebox.showerror(
-            "Error", "Please select a folder with the pattern dd.mm.yy"
+            "Error", "Please select a the delays folder"
         )
         return  # exits
 
@@ -637,38 +638,9 @@ def create_folders():
                                      message=f'Copy to CIIM Report Table {p_formatted_dates["dot"]} as well?')
         print(result)
         if result is True:
-            popup_question()
+            write_data_to_previous_report(construction_wp_path, p_formatted_dates["slash"], paths["previous_day"], TO_DAILY_REPORT_MAPPINGS)
 
 
-def popup_func():
-    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
-
-    write_data_to_previous_report(
-        construction_wp_path, p_formatted_dates["slash"], paths["previous_day"], TO_DAILY_REPORT_MAPPINGS
-    )
-    global top
-    if top:
-        top.destroy()
-        top = None  # Reset it to None after destroying to avoid future issues
-
-
-def popup_question():
-    global previous_day_entry, top
-    top = ttk.Toplevel(app)
-    # Assuming 'app' is the instance of your main window
-    x = app.winfo_x()
-    y = app.winfo_y()
-    top.geometry(f"+{x + 200}+{y + 100}")
-    top.title(None)
-    previous_day_label = ttk.Label(top, text="Row number")
-    previous_day_label.pack(side="left", padx=5, pady=5)
-    previous_day_entry = ttk.Entry(top, width=8)
-    previous_day_entry.pack(side="left", padx=5, pady=5)
-    previous_button = ttk.Button(top, text="Ok", command=popup_func, width=5, )
-    previous_button.pack(side="bottom", padx=5, pady=5, anchor="center")
-
-
-# Utility Functions
 def filter_by_date(df, date_column, target_date):
     """Filter a DataFrame based on a target date."""
     return df[df[date_column] == target_date]
@@ -696,7 +668,8 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
 
     # Using mappings to determine columns to load
     usecols_value = [mappings[header] for header in mappings.keys()]
-    df = pd.read_excel(src_path, sheet_name="Const. Plan", skiprows=1, usecols=usecols_value)
+    df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
+    print(df.columns)
 
     # Filter data
     target_df = filter_by_date(df, "Date [DD/MM/YY]", target_datetime)
@@ -731,10 +704,112 @@ def write_data_to_report(src_path, target_date, target_directory, mappings):
 
 
 def write_data_to_previous_report(src_path, target_date, target_directory, mappings):
-    user_input = (previous_day_entry.get())
-    start_row = int(user_input)
+    # Prompt the user for the starting row
+    start_row_delay = simpledialog.askinteger("Input", "Enter the starting row:", minvalue=1)
+    start_row_delay = int(start_row_delay)
+    # If the user cancels the prompt or doesn't enter a valid number, exit the function
+    if not start_row_delay:
+        return
 
-    write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=start_row)
+    write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=start_row_delay)
+
+
+def extract_date_from_path(path):
+    # Split the path into its components
+    components = path.split(os.sep)
+
+    # Get the last 2 components, which should be the date and week num
+    str_date = components[-1]
+    week_num = components[-2]
+
+    # Convert the string date to a datetime object
+    dt_date = datetime.strptime(str_date, '%d.%m.%y')
+
+    return str_date, dt_date, week_num
+
+
+def extract_src_path_from_date(str_date, dt_date, week_num):
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(dt_date)
+
+    # Creating the WW Delay Table
+    weekly_delay_name = f"Weekly Delay table {week_num}.xlsx"
+    weekly_delay_f_path = os.path.dirname(delays_folder_path)
+    weekly_delay_path = os.path.join(weekly_delay_f_path, weekly_delay_name)
+    weekly_delay_path = os.path.normpath(weekly_delay_path)
+
+    # Creating the CIIM Daily Report Table file path
+    daily_report_name = f"CIIM Report Table {str_date}.xlsx"
+    daily_report_f_path = paths["day"]
+    daily_report_path = os.path.join(daily_report_f_path, daily_report_name)
+    daily_report_path = os.path.normpath(daily_report_path)
+
+    print(daily_report_path)
+
+    print(weekly_delay_path)
+
+    return daily_report_path, weekly_delay_path
+
+
+def transfer_data(source_file, destination_file, mappings, dest_start_row=4):
+    # Load the workbooks and worksheets
+    src_wb = load_workbook(source_file)
+    src_ws = src_wb.active
+
+    dest_wb = load_workbook(destination_file)
+    dest_ws = dest_wb.active
+
+    # Find the header mapping in the source file
+    src_header = {}
+    for col_num, cell in enumerate(src_ws[3]):
+        if cell.value in mappings:
+            src_header[cell.value] = col_num + 1
+
+    # Find the header mapping in the destination file
+    dest_header = {}
+    for col_num, cell in enumerate(dest_ws[3]):
+        if cell.value in mappings.values():
+            dest_header[cell.value] = col_num + 1
+
+    src_row_start = 4
+    dest_row_counter = dest_start_row  # Initializing destination row counter with the user input
+
+    # Transfer the data based on mapping
+    for src_row in range(src_row_start, src_ws.max_row + 1):
+        for src_col, dest_col in mappings.items():
+            if src_col in src_header and dest_col in dest_header:
+                src_cell = src_ws.cell(row=src_row, column=src_header[src_col])
+                dest_cell = dest_ws.cell(row=dest_row_counter, column=dest_header[dest_col])
+                dest_cell.value = src_cell.value
+                print(
+                    f"Copied from Source(R{src_row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})")
+
+        dest_row_counter += 1  # Incrementing the destination row counter after each row of data
+
+    dest_wb.save(destination_file)
+
+
+
+def on_click():
+    # Prompt the user for the starting row
+    start_row_delay = simpledialog.askinteger("Input", "Enter the starting row:", minvalue=1)
+    start_row_delay = int(start_row_delay)
+    # If the user cancels the prompt or doesn't enter a valid number, exit the function
+    if not start_row_delay:
+        return
+
+    # Assuming you have some way to get the 'path', perhaps it's a global variable or it's stored elsewhere
+    # If it's not directly available, adjust the logic to obtain it
+    str_date, dt_date, week_num = extract_date_from_path(delays_folder_path)
+    daily_report_path, weekly_delay_path = extract_src_path_from_date(str_date, dt_date, week_num)
+
+    try:
+        transfer_data(daily_report_path, weekly_delay_path, TO_WEEKLY_DELAY_MAPPINGS, start_row_delay)
+        messagebox.showinfo("Success", f"Data transferred from {daily_report_path}.")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+
+
 
 
 def refresh_delays_folder():
@@ -852,7 +927,6 @@ TIME_COLUMNS = [
     "Difference",
     "Actual work time",
 ]
-
 CONSTRUCTION_WP_HEADERS = [
     "Discipline [OCS/Old Bridges/TS/SCADA & COM]",
     "WW [Nº]",
@@ -885,7 +959,7 @@ DAILY_REPORT_HEADERS = [
     "Delay details (comments + description)",
     "Team Name",
     "Team Leader Name (Phone)",
-    "EP",
+    "EP#",
     "T.P Start [Time]",
     "Actual Start Time (TL):",
     "T.P End [Time]",
@@ -894,7 +968,7 @@ DAILY_REPORT_HEADERS = [
     "Work Description",
     "Observations"
 ]
-DAILY_REPORT_HEADERS = {header: index for index, header in enumerate(DAILY_REPORT_HEADERS)}
+DAILY_REPORT_HEADERS_INDEX = {header: index for index, header in enumerate(DAILY_REPORT_HEADERS)}
 TO_WEEKLY_DELAY_MAPPINGS = {
     "WW [Nº]": "WW",
     "Discipline [OCS/Old Bridges/TS/SCADA & COM]": "Discipline [OCS, Scada, TS]",
@@ -902,7 +976,7 @@ TO_WEEKLY_DELAY_MAPPINGS = {
     "Date [DD/MM/YY]": "Date",
     "Team Name": "Team Name",
     "Team Leader Name (Phone)": "Team leader ",
-    "EP": "ISR section {EP}",
+    "EP#": "ISR section {EP}",
     "T.P Start [Time]": "TP Start Time (TAK)",
     "Actual Start Time (TL):": "Actual Start Time (Real Start time - TL)",
     "T.P End [Time]": "TP Finish Time (TAK)",
@@ -1158,5 +1232,8 @@ save_button = ttk.Button(
     width=8,
 )
 save_button.place(anchor=CENTER, relx=0.93, rely=0.94)
+
+paste_button = ttk.Button(menu3_frame4, text="Paste!", command=on_click, style="danger")
+paste_button.place(anchor=CENTER, relx=0.87, rely=0.75)
 
 app.mainloop()
