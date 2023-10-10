@@ -16,7 +16,6 @@ from openpyxl.utils.exceptions import InvalidFileException
 from tkinter import simpledialog, messagebox
 
 
-
 def define_related_paths():
     """Define all paths relative to the global CIIM_FOLDER_PATH."""
     base_path = CIIM_FOLDER_PATH  # Use the global CIIM_FOLDER_PATH
@@ -74,9 +73,7 @@ def open_delays_folder():
     folder_name = os.path.basename(delays_folder_path)
 
     if not pattern.match(folder_name):
-        messagebox.showerror(
-            "Error", "Please select a the delays folder"
-        )
+        messagebox.showerror("Error", "Please select a the delays folder")
         return  # exits
 
     tl_list = []
@@ -165,7 +162,9 @@ def combo_selected(event):
     global year, month, week, day, tl_index
 
     combo_selected_date = pd.Timestamp(dates_combobox.get())
-    day, month, year = [combo_selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+    day, month, year = [
+        combo_selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]
+    ]
     week = combo_selected_date.strftime("%U")
 
     construction_wp_workbook = load_workbook(
@@ -183,7 +182,7 @@ def combo_selected(event):
 
     construction_wp_workbook.close()
     print(day, month, year)
-    print(f'WW{week}')
+    print(f"WW{week}")
 
 
 def go(event):
@@ -430,11 +429,11 @@ def status_check():
     global status_color
 
     if (
-            start_time == 1
-            and end_time == 1
-            and reason_var == 1
-            and worker1_var == 1
-            and vehicle1_var == 1
+        start_time == 1
+        and end_time == 1
+        and reason_var == 1
+        and worker1_var == 1
+        and vehicle1_var == 1
     ):
         set_config(frame3_status, text="Completed", foreground="green")
         status_color = 1
@@ -503,33 +502,51 @@ def create_path_if_not_exists(path, label=None, message=None, **config_options):
 
 def derive_paths_from_date(selected_date):
     """Derive all related paths from a given date including multiple date formats."""
-    c_day, c_month, c_year = [selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+    c_day, c_month, c_year = [
+        selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]
+    ]
     p_date_datetime = selected_date - timedelta(days=1)
-    p_day, p_month, p_year = [p_date_datetime.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
+    p_day, p_month, p_year = [
+        p_date_datetime.strftime(pattern) for pattern in ["%d", "%m", "%Y"]
+    ]
 
-    c_week = selected_date.strftime("%U")  # returns the week number considering the first day of the week as Sunday
+    c_week = selected_date.strftime(
+        "%U"
+    )  # returns the week number considering the first day of the week as Sunday
 
     c_formatted_dates = {
         "slash": f"{c_day}/{c_month}/{c_year[-2:]}",
         "dot": f"{c_day}.{c_month}.{c_year[-2:]}",
-        "compact": f"{c_year[-2:]}{c_month}{c_day}"
+        "compact": f"{c_year[-2:]}{c_month}{c_day}",
     }
 
     p_formatted_dates = {
         "slash": f"{p_day}/{p_month}/{p_year[-2:]}",
         "dot": f"{p_day}.{p_month}.{p_year[-2:]}",
-        "compact": f"{p_year[-2:]}{p_month}{p_day}"
+        "compact": f"{p_year[-2:]}{p_month}{p_day}",
     }
 
     paths = {
         "year": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}"),
-        "week": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}"),
-        "day": os.path.join(CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}",
-                            f"{c_year[-2:]}{c_month}{c_day}"),
+        "week": os.path.join(
+            CIIM_FOLDER_PATH, f"Working Week {c_year}", f"Working Week N{c_week}"
+        ),
+        "day": os.path.join(
+            CIIM_FOLDER_PATH,
+            f"Working Week {c_year}",
+            f"Working Week N{c_week}",
+            f"{c_year[-2:]}{c_month}{c_day}",
+        ),
         "previous_year": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}"),
-        "previous_week": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}", f"Working Week N{c_week}"),
-        "previous_day": os.path.join(CIIM_FOLDER_PATH, f"Working Week {p_year}", f"Working Week N{c_week}",
-                                     f"{p_year[-2:]}{p_month}{p_day}"),
+        "previous_week": os.path.join(
+            CIIM_FOLDER_PATH, f"Working Week {p_year}", f"Working Week N{c_week}"
+        ),
+        "previous_day": os.path.join(
+            CIIM_FOLDER_PATH,
+            f"Working Week {p_year}",
+            f"Working Week N{c_week}",
+            f"{p_year[-2:]}{p_month}{p_day}",
+        ),
     }
 
     # Normalize the paths
@@ -546,13 +563,17 @@ def pick_date():
     paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(selected_date)
 
     # Feedback using button's text
-    calendar_button.config(text=f"WW: {selected_date.strftime('%U')}     Date: {selected_date.strftime('%d.%m.%Y')} ")
+    calendar_button.config(
+        text=f"WW: {selected_date.strftime('%U')}     Date: {selected_date.strftime('%d.%m.%Y')} "
+    )
 
     day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
     if os.path.exists(paths["day"]):
         messagebox.showerror("Error", day_message_exist)
 
-    entries_state = "disabled" if os.path.exists(c_formatted_dates["compact"]) else "normal"
+    entries_state = (
+        "disabled" if os.path.exists(c_formatted_dates["compact"]) else "normal"
+    )
     set_config(fc_ocs_entry, state=entries_state)
     set_config(fc_scada_entry, state=entries_state)
     set_config(create_button, state=entries_state)
@@ -575,9 +596,7 @@ def create_folders():
         )
         messagebox.showinfo(None, day_created_message)
 
-    fc_ciim_report_name = (
-        f'CIIM Report Table {c_formatted_dates["dot"]}.xlsx'.strip()
-    )
+    fc_ciim_report_name = f'CIIM Report Table {c_formatted_dates["dot"]}.xlsx'.strip()
     print(f"Generated report name: {fc_ciim_report_name}")
 
     templates_path = Path(main_paths["templates"])
@@ -590,7 +609,9 @@ def create_folders():
     new_report_path = os.path.join(paths["day"], fc_ciim_report_name)
     print(f"Renaming file to: {new_report_path}")
     if os.path.exists(os.path.join(paths["day"], "CIIM Report Table v.1.xlsx")):
-        os.rename(os.path.join(paths["day"], "CIIM Report Table v.1.xlsx"), new_report_path)
+        os.rename(
+            os.path.join(paths["day"], "CIIM Report Table v.1.xlsx"), new_report_path
+        )
         # Print the list of files in the directory for verification
         print("Files in directory after renaming:")
         print(os.listdir(paths["day"]))
@@ -630,15 +651,27 @@ def create_folders():
         print("Not copying works to the selected date")
         return
 
-    write_data_to_report(construction_wp_path, c_formatted_dates["slash"], paths["day"], TO_DAILY_REPORT_MAPPINGS)
+    write_data_to_report(
+        construction_wp_path,
+        c_formatted_dates["slash"],
+        paths["day"],
+        TO_DAILY_REPORT_MAPPINGS,
+    )
 
     # Only show the popup if previous day path exists
     if check_path_exists(paths["previous_day"]):  # Use the new function here
-        result = messagebox.askyesno(title=None,
-                                     message=f'Copy to CIIM Report Table {p_formatted_dates["dot"]} as well?')
+        result = messagebox.askyesno(
+            title=None,
+            message=f'Copy to CIIM Report Table {p_formatted_dates["dot"]} as well?',
+        )
         print(result)
         if result is True:
-            write_data_to_previous_report(construction_wp_path, p_formatted_dates["slash"], paths["previous_day"], TO_DAILY_REPORT_MAPPINGS)
+            write_data_to_previous_report(
+                construction_wp_path,
+                p_formatted_dates["slash"],
+                paths["previous_day"],
+                TO_DAILY_REPORT_MAPPINGS,
+            )
 
 
 def filter_by_date(df, date_column, target_date):
@@ -666,34 +699,36 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
     report_filename = f"CIIM Report Table {formatted_target_date}.xlsx"
     target_report_path = os.path.join(target_directory, report_filename)
 
-    # Using mappings to determine columns to load
-    usecols_value = [mappings[header] for header in mappings.keys()]
+    # Using mappings to determine columns to load from the source
+    usecols_value = list(mappings.values())
     df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
-    print(df.columns)
 
     # Filter data
     target_df = filter_by_date(df, "Date [DD/MM/YY]", target_datetime)
 
-    # Write to target workbook
+    # Open the target workbook
     target_workbook = load_workbook(filename=target_report_path)
     target_worksheet = target_workbook.active
-
-    # Write headers (using the mappings keys as headers)
-    for col, header in enumerate(mappings.keys(), 2):  # Starting from column B
-        target_worksheet.cell(row=start_row - 1, column=col, value=header)
 
     # Write data
     for row_idx, (index, row_data) in enumerate(target_df.iterrows(), start=start_row):
         for col_idx, header in enumerate(mappings.keys(), 2):  # Starting from column B
-            target_worksheet.cell(row=row_idx, column=col_idx, value=row_data[header])
+            src_header = mappings[header]
+            target_worksheet.cell(
+                row=row_idx, column=col_idx, value=row_data[src_header]
+            )
 
     # Format Date column
     date_col_idx = list(mappings.keys()).index("Date [DD/MM/YY]") + 2
-    format_datetime_column(target_worksheet, date_col_idx, start_row, target_worksheet.max_row)
+    format_datetime_column(
+        target_worksheet, date_col_idx, start_row, target_worksheet.max_row
+    )
 
     # Format Observations column (assuming "Observations" is always a key in your mappings)
     observations_col_idx = list(mappings.keys()).index("Observations") + 2
-    format_observations_column(target_worksheet, observations_col_idx, start_row, target_worksheet.max_row)
+    format_observations_column(
+        target_worksheet, observations_col_idx, start_row, target_worksheet.max_row
+    )
 
     target_workbook.save(target_report_path)
     print(f"Report for {formatted_target_date} has been updated and saved.")
@@ -705,13 +740,17 @@ def write_data_to_report(src_path, target_date, target_directory, mappings):
 
 def write_data_to_previous_report(src_path, target_date, target_directory, mappings):
     # Prompt the user for the starting row
-    start_row_delay = simpledialog.askinteger("Input", "Enter the starting row:", minvalue=1)
+    start_row_delay = simpledialog.askinteger(
+        "Input", "Enter the starting row:", minvalue=4
+    )
     start_row_delay = int(start_row_delay)
     # If the user cancels the prompt or doesn't enter a valid number, exit the function
     if not start_row_delay:
         return
 
-    write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=start_row_delay)
+    write_data_to_excel(
+        src_path, target_date, target_directory, mappings, start_row=start_row_delay
+    )
 
 
 def extract_date_from_path(path):
@@ -723,7 +762,7 @@ def extract_date_from_path(path):
     week_num = components[-2]
 
     # Convert the string date to a datetime object
-    dt_date = datetime.strptime(str_date, '%d.%m.%y')
+    dt_date = datetime.strptime(str_date, "%d.%m.%y")
 
     return str_date, dt_date, week_num
 
@@ -750,13 +789,20 @@ def extract_src_path_from_date(str_date, dt_date, week_num):
     return daily_report_path, weekly_delay_path
 
 
-def transfer_data(source_file, destination_file, mappings, dest_start_row=4):
+def transfer_data(
+    source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
+):
     # Load the workbooks and worksheets
     src_wb = load_workbook(source_file)
     src_ws = src_wb.active
 
     dest_wb = load_workbook(destination_file)
-    dest_ws = dest_wb.active
+
+    # Set the destination worksheet
+    if dest_sheet_name and dest_sheet_name in dest_wb.sheetnames:
+        dest_ws = dest_wb[dest_sheet_name]
+    else:
+        dest_ws = dest_wb.active  # default to the active sheet if none specified
 
     # Find the header mapping in the source file
     src_header = {}
@@ -770,46 +816,87 @@ def transfer_data(source_file, destination_file, mappings, dest_start_row=4):
         if cell.value in mappings.values():
             dest_header[cell.value] = col_num + 1
 
-    src_row_start = 4
-    dest_row_counter = dest_start_row  # Initializing destination row counter with the user input
+    dest_row_counter = (
+        dest_start_row  # Initializing destination row counter with the user input
+    )
 
-    # Transfer the data based on mapping
-    for src_row in range(src_row_start, src_ws.max_row + 1):
-        for src_col, dest_col in mappings.items():
-            if src_col in src_header and dest_col in dest_header:
-                src_cell = src_ws.cell(row=src_row, column=src_header[src_col])
-                dest_cell = dest_ws.cell(row=dest_row_counter, column=dest_header[dest_col])
-                dest_cell.value = src_cell.value
-                print(
-                    f"Copied from Source(R{src_row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})")
+    for row in range(4, src_ws.max_row + 1):  # Start from 4th row in the source
+        observation_col = src_header.get("Observations", None)
+        should_transfer = True  # By default, transfer all rows
 
-        dest_row_counter += 1  # Incrementing the destination row counter after each row of data
+        # If the "Observations" column exists, update the should_transfer based on its value
+        if observation_col:
+            observation_cell = src_ws.cell(row=row, column=observation_col)
+            if observation_cell and observation_cell.value:
+                observation_value = observation_cell.value
+                if "cancel" not in observation_value.lower():
+                    should_transfer = (
+                        False  # Don't transfer rows without "cancel" in observation
+                    )
+
+        if should_transfer:
+            for src_col, dest_col in mappings.items():
+                if src_col in src_header and dest_col in dest_header:
+                    src_cell = src_ws.cell(row=row, column=src_header[src_col])
+                    dest_cell = dest_ws.cell(
+                        row=dest_row_counter, column=dest_header[dest_col]
+                    )
+                    dest_cell.value = src_cell.value
+                    print(
+                        f"Copied from Source(R{row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})"
+                    )
+
+            dest_row_counter += 1  # Increment the destination row counter
 
     dest_wb.save(destination_file)
 
 
-
-def on_click():
-    # Prompt the user for the starting row
-    start_row_delay = simpledialog.askinteger("Input", "Enter the starting row:", minvalue=1)
-    start_row_delay = int(start_row_delay)
-    # If the user cancels the prompt or doesn't enter a valid number, exit the function
-    if not start_row_delay:
+def transfer_data_generic(mapping, dest_sheet, filter_observation=None):
+    if delays_folder_path == "":
+        messagebox.showerror(
+            title="error", message="Please select the delays folder and try again."
+        )
         return
 
-    # Assuming you have some way to get the 'path', perhaps it's a global variable or it's stored elsewhere
-    # If it's not directly available, adjust the logic to obtain it
+    # Prompt the user for the starting row
+    dest_start_row = simpledialog.askinteger(
+        "Input", "Enter the starting row:", minvalue=4
+    )
+
+    if dest_start_row is None:
+        return  # exits if the dialog was closed without entering a value
+
+    dest_start_row = int(dest_start_row)
+
+    if not dest_start_row:
+        return  # exits
+
     str_date, dt_date, week_num = extract_date_from_path(delays_folder_path)
-    daily_report_path, weekly_delay_path = extract_src_path_from_date(str_date, dt_date, week_num)
+    daily_report_path, weekly_delay_path = extract_src_path_from_date(
+        str_date, dt_date, week_num
+    )
 
     try:
-        transfer_data(daily_report_path, weekly_delay_path, TO_WEEKLY_DELAY_MAPPINGS, start_row_delay)
-        messagebox.showinfo("Success", f"Data transferred from {daily_report_path}.")
+        transfer_data(
+            daily_report_path,
+            weekly_delay_path,
+            mapping,
+            dest_start_row,
+            dest_sheet_name=dest_sheet,
+        )
+        messagebox.showinfo("Success", "Data transferred successfully!")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
+def transfer_data_to_weekly_delay():
+    transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
 
+
+def transfer_data_to_weekly_cancelled():
+    transfer_data_generic(
+        TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
+    )
 
 
 def refresh_delays_folder():
@@ -837,8 +924,8 @@ def show_frame(frame):
     # If the frame being shown is not "Start Page", configure the menubar
     if frame != frames["Start Page"]:
         menu_options_list = list(frames.keys())[
-                            :3
-                            ]  # Get only the first 3 keys from the frames dictionary
+            :3
+        ]  # Get only the first 3 keys from the frames dictionary
 
         menubar = Menu(app)
         app.config(menu=menubar)
@@ -846,6 +933,11 @@ def show_frame(frame):
             menubar.add_command(
                 label=option, command=lambda option=option: show_frame((frames[option]))
             )
+
+
+def on_closing():
+    # handle any cleanup here
+    app.destroy()
 
 
 def create_and_grid_label(parent, text, row, col, sticky="w", padx=None, pady=None):
@@ -861,7 +953,7 @@ def create_and_grid_label(parent, text, row, col, sticky="w", padx=None, pady=No
 
 
 def create_and_grid_entry(
-        parent, row, col, sticky=None, padx=None, pady=None, **kwargs
+    parent, row, col, sticky=None, padx=None, pady=None, **kwargs
 ):
     # Separate grid arguments from entry initialization arguments
     grid_args = {k: kwargs.pop(k) for k in ["columnspan"] if k in kwargs}
@@ -928,61 +1020,95 @@ TIME_COLUMNS = [
     "Actual work time",
 ]
 CONSTRUCTION_WP_HEADERS = [
-    "Discipline [OCS/Old Bridges/TS/SCADA & COM]",
+    "Discipline [OCS/Old Bridges/TS/Scada]",
     "WW [Nº]",
     "Date [DD/MM/YY]",
     "T.P Start [Time]",
     "T.P End [Time]",
     "T.P Start [K.P]",
     "T.P End [K.P]",
-    "EP#",
+    "EP",
     "ISR Start Section [Name]",
     "ISR  End Section [Name]",
     "Foremen [Israel]",
     "Team Name",
-    "Team Leader Name (Phone)",
+    "Team Leader\nName (Phone)",
     "Work Description (Baseline)",
     "ISR Safety Request",
     "ISR Comm&Rail:",
     "ISR T.P request (All/Track number)",
-    "Observations"
+    "Observations",
 ]
-HEADER_TO_INDEX = {header: index for index, header in enumerate(CONSTRUCTION_WP_HEADERS)}
+HEADER_TO_INDEX = {
+    header: index for index, header in enumerate(CONSTRUCTION_WP_HEADERS)
+}
 # All the Headers from the Construction Work Plan match the CIIM Report Table
 TO_DAILY_REPORT_MAPPINGS = {
-    header: header for header in CONSTRUCTION_WP_HEADERS}
+    "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS/Old Bridges/TS/Scada]",
+    "WW [Nº]": "WW [Nº]",
+    "Date [DD/MM/YY]": "Date [DD/MM/YY]",
+    "T.P Start [Time]": "T.P Start [Time]",
+    "T.P End [Time]": "T.P End [Time]",
+    "T.P Start [K.P]": "T.P Start [K.P]",
+    "T.P End [K.P]": "T.P End [K.P]",
+    "ISR Start Section [Name]": "ISR Start Section [Name]",
+    "ISR  End Section [Name]": "ISR  End Section [Name]",
+    "EP": "EP",
+    "Foremen [Israel]": "Foremen [Israel]",
+    "Team Name": "Team Name",
+    "Team Leader\nName (Phone)": "Team Leader\nName (Phone)",
+    "Work Description (Baseline)": "Work Description",
+    "ISR Safety Request": "ISR Safety Request",
+    "ISR Comm&Rail:": "ISR Comm&Rail:",
+    "ISR T.P request (All/Track number)": "ISR T.P request (All/Track number)",
+    "Observations": "Observations",
+}
 
 DAILY_REPORT_HEADERS = [
     "WW [Nº]",
-    "Discipline [OCS/Old Bridges/TS/SCADA & COM]",
+    "Discipline [OCS/Old Bridges/TS/Scada]",
     "Date [DD/MM/YY]",
     "Delay details (comments + description)",
     "Team Name",
-    "Team Leader Name (Phone)",
-    "EP#",
+    "Team Leader\nName (Phone)",
+    "EP",
     "T.P Start [Time]",
     "Actual Start Time (TL):",
     "T.P End [Time]",
     "Actual Finish Time (TL):",
     "Number of workers",
     "Work Description",
-    "Observations"
+    "Observations",
 ]
-DAILY_REPORT_HEADERS_INDEX = {header: index for index, header in enumerate(DAILY_REPORT_HEADERS)}
+DAILY_REPORT_HEADERS_INDEX = {
+    header: index for index, header in enumerate(DAILY_REPORT_HEADERS)
+}
 TO_WEEKLY_DELAY_MAPPINGS = {
     "WW [Nº]": "WW",
-    "Discipline [OCS/Old Bridges/TS/SCADA & COM]": "Discipline [OCS, Scada, TS]",
-    "Delay details (comments + description)": "Reason",
+    "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
     "Date [DD/MM/YY]": "Date",
+    "Delay details (comments + description)": "Reason",
     "Team Name": "Team Name",
-    "Team Leader Name (Phone)": "Team leader ",
-    "EP#": "ISR section {EP}",
+    "Team Leader\nName (Phone)": "Team leader",
+    "EP": "ISR section {EP}",
     "T.P Start [Time]": "TP Start Time (TAK)",
+    "Work Description": "Work Description",
     "Actual Start Time (TL):": "Actual Start Time (Real Start time - TL)",
     "T.P End [Time]": "TP Finish Time (TAK)",
     "Actual Finish Time (TL):": "Actual Finish Time (Real Finish time - TL)",
-    "Number of workers": "Workers"
+    "Number of workers": "Workers",
 }
+TO_WEEKLY_CANCELLED_MAPPING = {
+    "WW [Nº]": "WW",
+    "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
+    "Date [DD/MM/YY]": "Date",
+    "Observations": "Reason",
+    "Team Leader\nName (Phone)": "Team leader",
+    "Work Description": "Work Description",
+    "EP": "ISR section {EP}",
+}
+
+
 # Centralized list of entries and their configurations
 ENTRIES_CONFIG = {
     "frame4_stime_entry": {
@@ -1057,7 +1183,11 @@ welcome_label = ttk.Label(
 welcome_label.pack(pady=100)
 
 start_button = ttk.Button(
-    frames["Start Page"], text="Get Started!", command=open_const_wp, width=20, style='success'
+    frames["Start Page"],
+    text="Get Started!",
+    command=open_const_wp,
+    width=20,
+    style="success",
 )
 start_button.pack(pady=20)
 show_frame(frames["Start Page"])
@@ -1233,7 +1363,21 @@ save_button = ttk.Button(
 )
 save_button.place(anchor=CENTER, relx=0.93, rely=0.94)
 
-paste_button = ttk.Button(menu3_frame4, text="Paste!", command=on_click, style="danger")
-paste_button.place(anchor=CENTER, relx=0.87, rely=0.75)
+transfer_to_delay_button = ttk.Button(
+    menu3_frame4,
+    text="Transfer delays",
+    command=transfer_data_to_weekly_delay,
+    style="danger.Outline",
+)
+transfer_to_delay_button.place(anchor=CENTER, relx=0.80, rely=0.03)
 
+transfer_to_cancelled_button = ttk.Button(
+    menu3_frame4,
+    text="Transfer cancelled",
+    command=transfer_data_to_weekly_cancelled,
+    style="danger.Outline",
+)
+transfer_to_cancelled_button.place(anchor=CENTER, relx=0.80, rely=0.11)
+
+app.protocol("WM_DELETE_WINDOW", on_closing)
 app.mainloop()
