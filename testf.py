@@ -1,139 +1,119 @@
-def transfer_data(
-    source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
-):
-    # Load the workbooks and worksheets
-    src_wb = load_workbook(source_file)
-    src_ws = src_wb.active
+import pandas as pd
+from openpyxl import load_workbook
+import os
 
-    dest_wb = load_workbook(destination_file)
 
-    # Set the destination worksheet
-    if dest_sheet_name and dest_sheet_name in dest_wb.sheetnames:
-        dest_ws = dest_wb[dest_sheet_name]
-    else:
-        dest_ws = dest_wb.active  # default to the active sheet if none specified
+def write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=4):
+    target_datetime = pd.to_datetime(target_date, format="%d/%m/%y", errors="coerce")
+    formatted_target_date = target_datetime.strftime("%d.%m.%y")
+    report_filename = f"CIIM Report Table {formatted_target_date}.xlsx"
+    target_report_path = os.path.join(target_directory, report_filename)
 
-    # Find the header mapping in the source file
-    src_header = {}
-    for col_num, cell in enumerate(src_ws[3]):
-        if cell.value in mappings:
-            src_header[cell.value] = col_num + 1
+    # Using mappings to determine columns to load from the source
+    usecols_value = list(mappings.values())
+    df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
 
-    # Find the header mapping in the destination file
-    dest_header = {}
-    for col_num, cell in enumerate(dest_ws[3]):
-        if cell.value in mappings.values():
-            dest_header[cell.value] = col_num + 1
+    # Filter data
+    target_df = filter_by_date(df, "Date [DD/MM/YY]", target_datetime)
 
-    dest_row_counter = (
-        dest_start_row  # Initializing destination row counter with the user input
+    # Open the target workbook
+    target_workbook = load_workbook(filename=target_report_path)
+    target_worksheet = target_workbook.active
+
+    # Write data
+    for row_idx, (index, row_data) in enumerate(target_df.iterrows(), start=start_row):
+        for col_idx, header in enumerate(mappings.keys(), 2):  # Starting from column B
+            src_header = mappings[header]
+            target_worksheet.cell(
+                row=row_idx, column=col_idx, value=row_data[src_header]
+            )
+
+    # Format Date column
+    date_col_idx = list(mappings.keys()).index("Date [DD/MM/YY]") + 2
+    format_datetime_column(
+        target_worksheet, date_col_idx, start_row, target_worksheet.max_row
     )
 
-    # Transfer the data based on mapping
-    for row in range(4, src_ws.max_row + 1):  # Always start from 4th row in the source
-        for src_col, dest_col in mappings.items():
-            if src_col in src_header and dest_col in dest_header:
-                src_cell = src_ws.cell(row=row, column=src_header[src_col])
-                dest_cell = dest_ws.cell(
-                    row=dest_row_counter, column=dest_header[dest_col]
-                )
-                dest_cell.value = src_cell.value
-                print(
-                    f"Copied from Source(R{row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})"
-                )
+    # Format Observations column (assuming "Observations" is always a key in your mappings)
+    observations_col_idx = list(mappings.keys()).index("Observations") + 2
+    format_observations_column(
+        target_worksheet, observations_col_idx, start_row, target_worksheet.max_row
+    )
 
-        dest_row_counter += (
-            1  # Increment the destination row counter after each row of data
-        )
-
-    dest_wb.save(destination_file)
+    target_workbook.save(target_report_path)
+    print(f"Report for {formatted_target_date} has been updated and saved.")
 
 
-def transfer_data_generic(mapping, dest_sheet):
-    if delays_folder_path == "":
-        messagebox.showerror(
-            title="error", message="Please select the delays folder and try again."
-        )
-        return
+def write_data_to_report(src_path, target_date, target_directory, mappings):
+    write_data_to_excel(src_path, target_date, target_directory, mappings)
 
+
+def write_data_to_previous_report(src_path, target_date, target_directory, mappings):
     # Prompt the user for the starting row
-    dest_start_row = simpledialog.askinteger(
+    start_row_delay = simpledialog.askinteger(
         "Input", "Enter the starting row:", minvalue=4
     )
+    start_row_delay = int(start_row_delay)
+    # If the user cancels the prompt or doesn't enter a valid number, exit the function
+    if not start_row_delay:
+        return
 
-    # Check if dest_start_row is None (i.e., the dialog was closed without entering a value)
-    if dest_start_row is None:
-        return  # Exit the function
-
-    dest_start_row = int(dest_start_row)
-
-    if not dest_start_row:
-        return  # exits
-
-    str_date, dt_date, week_num = extract_date_from_path(delays_folder_path)
-    daily_report_path, weekly_delay_path = extract_src_path_from_date(
-        str_date, dt_date, week_num
+    write_data_to_excel(
+        src_path, target_date, target_directory, mappings, start_row=start_row_delay
     )
 
-    try:
-        transfer_data(
-            daily_report_path,
-            weekly_delay_path,
-            mapping,
-            dest_start_row,
-            dest_sheet_name=dest_sheet,
-        )
-        messagebox.showinfo("Success", "Data transferred successfully!")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {e}")
+
+def save_to_excel():
+    global delay_excel_workbook
+
+    if not selected_tl:
+        return
+
+    full_file_path = delays_folder_path / f"{selected_tl}.xlsx"
+    delay_excel_workbook = load_workbook(filename=full_file_path)
+    delay_excel_worksheet = delay_excel_workbook["Sheet1"]
+
+    # Direct assignments using ENTRIES_CONFIG
+    for entry_name, config in ENTRIES_CONFIG.items():
+        cell_address = config["cell"]
+        entry = globals()[entry_name]
+        delay_excel_worksheet[cell_address] = entry.get()
+
+    # Update cell H8 with the latest username
+    latest_username = get_latest_username_from_file()
+    if latest_username:
+        delay_excel_worksheet["H8"] = latest_username
+
+    print(f"Active username : {latest_username}")
+    delay_excel_workbook.save(str(full_file_path))
+    clear_cells()
+    load_from_excel()
+    line_status()
+    print(f"Saved successfully : {selected_tl}")
 
 
-def transfer_data_to_weekly_delay():
-    transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
+def status_check():
+    global status_color
+
+    if (
+        start_time == 1
+        and end_time == 1
+        and reason_var == 1
+        and worker1_var == 1
+        and vehicle1_var == 1
+    ):
+        set_config(frame3_status, text="Completed", foreground="green")
+
+        status_color = 1
+    else:
+        set_config(frame3_status, text="Not completed", foreground="#E83845")
+        status_color = 0
 
 
-def transfer_data_to_weekly_cancelled():
-    transfer_data_generic(TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled")
-
-
-
-
-
-
-
-
-
-    for row in range(4, src_ws.max_row + 1):  # Always start from 4th row in the source
-    observation_cell = src_ws.cell(
-        row=row, column=src_header.get("Observations", None)
-        for src_col, dest_col in mappings.items():
-            if src_col in src_header and dest_col in dest_header:
-                src_cell = src_ws.cell(row=row, column=src_header[src_col])
-                dest_cell = dest_ws.cell(
-                    row=dest_row_counter, column=dest_header[dest_col]
-                )
-                dest_cell.value = src_cell.value
-                print(
-                    f"Copied from Source(R{row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})"
-                )
-
-            if observation_cell:
-                observation_value = observation_cell.value)
-                if observation_value and "cancel" in observation_value.lower():
-                # Proceed with the data transfer for this row.
-                    for src_col, dest_col in mappings.items():
-                if src_col in src_header and dest_col in dest_header:
-                    src_cell = src_ws.cell(row=row, column=src_header[src_col])
-                dest_cell = dest_ws.cell(
-                    row=dest_row_counter, column=dest_header[dest_col]
-                )
-                dest_cell.value = src_cell.value
-                print(
-                    f"Copied from Source(R{row}C{src_header[src_col]}) to Dest(R{dest_row_counter}C{dest_header[dest_col]})"
-                )
-
-
-
-        dest_row_counter += (
-            1  # Increment the destination row counter after each row of data
-        )
+def set_entry_status(entry, var_name, default_val=0):
+    if entry.get() == "":
+        entry.config(style="danger.TEntry")
+        globals()[var_name] = default_val
+    else:
+        entry.config(style="success.TEntry")
+        globals()[var_name] = 1
