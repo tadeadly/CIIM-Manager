@@ -13,7 +13,6 @@ import time
 from openpyxl.utils.exceptions import InvalidFileException
 from tkinter import simpledialog, messagebox
 import os
-import datetime
 
 
 def define_related_paths():
@@ -136,8 +135,19 @@ def open_const_wp():
         unique_dates = set()  # Use a set to keep track of unique dates
 
         for cell in construction_wp_worksheet["D"]:
-            if cell.value and isinstance(cell.value, datetime.datetime):
-                unique_dates.add(cell.value.date().isoformat())
+            print(f"Reading cell {cell.row}, value: {cell.value}")  # Debug line
+            if cell.value:
+                date_value = None
+                if isinstance(cell.value, datetime):
+                    date_value = cell.value.date()
+                else:
+                    try:
+                        date_value = datetime.strptime(cell.value, "%d/%m/%Y").date()
+                    except ValueError:
+                        # If it can't be parsed as a date, we'll just continue to the next cell
+                        continue
+                if date_value:
+                    unique_dates.add(date_value.isoformat())
 
         # Convert set to a list for further use
         cp_dates = list(unique_dates)
