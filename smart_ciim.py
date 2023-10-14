@@ -12,7 +12,6 @@ from datetime import timedelta, datetime, date
 import time
 from openpyxl.utils.exceptions import InvalidFileException
 from tkinter import simpledialog, messagebox
-import os
 
 
 def define_related_paths():
@@ -27,12 +26,11 @@ def define_related_paths():
         "templates": base_path / "Important doc" / "Empty reports (templates)",
     }
 
-    # With pathlib, paths are already normalized.
-    # However, if you want to make sure they're converted to string, you can do:
     return paths
 
 
 def get_latest_username_from_file():
+    global username
     paths = define_related_paths()
     passdown_path = paths["passdown"]
 
@@ -44,9 +42,10 @@ def get_latest_username_from_file():
     )
 
     if files:
-        file_name = files[0].stem  # Gets the file name without the extension
-        match = re.search(r"\d{6}\.\d+\s+(\w+)", file_name)
-        return match.group(1) if match else None
+        filename = files[0].stem  # Gets the file name without the extension
+        match = re.search(r"\d{6}\.\d+\s+(\w+)", filename)
+        username = match.group(1)
+        return username if match else None
     return None
 
 
@@ -208,62 +207,61 @@ def combo_selected(event):
     for tl_name in team_leaders_list:
         dc_tl_listbox.insert(END, tl_name)
 
+    get_latest_username_from_file()
+    print(username)
+
     construction_wp_workbook.close()
 
 
-def go(event):
-    global team_leader_name
-    cs = tl_listbox.curselection()
-    tl_name_selected.config(text=tl_listbox.get(cs))
-    team_leader_name = tl_listbox.get(cs)
-    print(f"Loading : {team_leader_name}")
-    clear_cells()
-    load_from_excel()
-    line_status()
-
-
-# def open_delay_file(event):
-#     tl_listbox.curselection()
-#     os.startfile(delay_report_path)
-
-
-def change_tl_name(event):
-    tl_listbox.curselection()
-    new_team_leader_name = simpledialog.askstring(
-        "Input",
-        "Enter the new TL name:",
-    )
-    new_delay_report_path = (
-        delays_dir_path
-        / f"Delay Report {new_team_leader_name} {delays_dir_path.name}.xlsx"
-    )
-
-    # 1. Update the Excel cell
-    delay_ws = delay_report_wb["Sheet1"]
-    set_cell(delay_ws, 7, 7, new_team_leader_name)
-
-    # Save the changes to the current file before renaming
-    delay_report_wb.save(str(delay_report_path))
-
-    # 2. Rename the file
-    if not new_delay_report_path.exists():
-        delay_report_path.rename(new_delay_report_path)
-        messagebox.showinfo(
-            title="Success", message=f"Renamed to {new_delay_report_path.name}"
-        )
-    else:
-        messagebox.showwarning("Warning", "A file with that name already exists!")
-
-    refresh_delays_folder()
-
-
-def dc_tl_selected(event):
+def dc_on_listbox_double_click(event):
     global dc_selected_team_leader, tl_num
     dc_listbox_selection_index = dc_tl_listbox.curselection()
     dc_tl_listbox.itemconfig(dc_listbox_selection_index, bg="#ED969D")
     dc_selected_team_leader = str(dc_tl_listbox.get(dc_listbox_selection_index))
     tl_num = tl_index[dc_listbox_selection_index[0]]
-    create_delay()
+    create_delay_wb()
+
+
+def create_delay_wb():
+    paths = define_related_paths()
+    delays_path = paths["delays"]
+
+    dc_year_path = delays_path / dc_year
+    dc_week_path = dc_year_path / f"WW{dc_week}"
+    dc_day_dir = f"{dc_day}.{dc_month}.{dc_year[2:]}"
+    dc_day_path = dc_week_path / dc_day_dir
+
+    # Create required paths if they don't exist
+    dc_day_path.mkdir(parents=True, exist_ok=True)
+
+    dc_delay_report_file = f"Delay Report {dc_selected_team_leader} {dc_day_dir}.xlsx"
+    dc_delay_report_path = dc_day_path / dc_delay_report_file
+
+    # Handle Template Copy & Rename
+    if dc_delay_report_path.exists():
+        status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} already exists!\n{dc_day_path}"
+        messagebox.showerror("Error", status_msg)
+        print(status_msg)
+    else:
+        print(f"Creating Delay Report {dc_selected_team_leader}")
+        copy_and_rename_template(
+            paths["templates"] / DELAY_TEMPLATE,
+            dc_day_path,
+            dc_delay_report_file,
+        )
+
+        cp_wb = load_workbook(filename=construction_wp_path, read_only=True)
+        cp_ws = cp_wb["Const. Plan"]
+        dc_delay_wb = load_workbook(filename=dc_delay_report_path)
+        dc_delay_ws = dc_delay_wb.active
+
+        copy_from_cp_to_delay(cp_ws, dc_delay_ws, tl_num, dc_day_dir)
+        fill_delay_ws_cells(dc_delay_ws, cp_ws, tl_num)
+
+        dc_delay_wb.save(str(dc_delay_report_path))
+
+        status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} created!\n{dc_day_path}"
+        messagebox.showinfo(None, status_msg)
 
 
 def copy_and_rename_template(src_path, dest_path, new_name):
@@ -309,14 +307,10 @@ def copy_from_cp_to_delay(cp_ws, delay_ws, team_leader_num, day_folder):
         set_cell(delay_ws, delay_row, delay_col, value)
 
 
-def update_cell_value(ws, cell_address, new_value):
-    """Update the value of a specific cell in the provided worksheet."""
-    ws[cell_address].value = new_value
-
-
 def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_index):
     """Fill specific cells of delay_ws with fixed values or patterns."""
     cells_to_fill = {
+        (8, 8): username,
         (16, 5): "Foreman",
         (17, 5): "Team Leader",
         (16, 7): "SEMI",
@@ -336,51 +330,36 @@ def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_index):
         set_cell(delay_ws, row, col, value)
 
     # Set fill patterns for specific cells
-    pattern_fill_cells = ["B3", "G7", "C7", "B5", "B6", "F8", "B8", "F5", "F6", "H8"]
+    pattern_fill_cells = [
+        "B3",
+        "G7",
+        "C7",
+        "B5",
+        "B6",
+        "F8",
+        "B8",
+        "F5",
+        "F6",
+    ]
     for cell in pattern_fill_cells:
         delay_ws[cell].fill = PatternFill(bgColor="FFFFFF")
 
 
-def create_delay():
-    paths = define_related_paths()
-    delays_path = paths["delays"]
+def refresh_delays_folder():
+    global delays_dir_path, tl_list
 
-    dc_year_path = delays_path / dc_year
-    dc_week_path = dc_year_path / f"WW{dc_week}"
-    dc_day_dir = f"{dc_day}.{dc_month}.{dc_year[2:]}"
-    dc_day_path = dc_week_path / dc_day_dir
+    if not delays_dir_path:
+        return
 
-    # Create required paths if they don't exist
-    dc_day_path.mkdir(parents=True, exist_ok=True)
+    # Generate sorted list of file stems in the directory
+    tl_list = sorted(
+        child.stem for child in delays_dir_path.iterdir() if child.is_file()
+    )
 
-    dc_delay_report_file = f"Delay Report {dc_selected_team_leader} {dc_day_dir}.xlsx"
-    dc_delay_report_path = dc_day_path / dc_delay_report_file
-
-    # Handle Template Copy & Rename
-    if dc_delay_report_path.exists():
-        status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} already exists!\n{dc_day_path}"
-        messagebox.showerror("Error", status_msg)
-        print(status_msg)
-    else:
-        print(f"Creating Delay Report {dc_selected_team_leader}")
-        copy_and_rename_template(
-            paths["templates"] / DELAY_TEMPLATE,
-            dc_day_path,
-            dc_delay_report_file,
-        )
-
-        cp_wb = load_workbook(filename=construction_wp_path, read_only=True)
-        cp_ws = cp_wb["Const. Plan"]
-        dc_delay_wb = load_workbook(filename=dc_delay_report_path)
-        dc_delay_ws = dc_delay_wb.active
-
-        copy_from_cp_to_delay(cp_ws, dc_delay_ws, tl_num, dc_day_dir)
-        fill_delay_ws_cells(dc_delay_ws, cp_ws, tl_num)
-
-        dc_delay_wb.save(str(dc_delay_report_path))
-
-        status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} created!\n{dc_day_path}"
-        messagebox.showinfo(None, status_msg)
+    print(tl_list)
+    tl_listbox.delete(0, END)
+    for tl_name in tl_list:
+        tl_listbox.insert(END, tl_name)
 
 
 def clear_cells():
@@ -409,7 +388,7 @@ def get_cell_mapping():
     return mapping
 
 
-def load_from_excel():
+def load_delay_wb():
     global delay_report_wb, delay_report_path, delay_report_ws
 
     def insert_value(row, col, widget, time_format=False):
@@ -442,7 +421,58 @@ def load_from_excel():
         insert_value(row, col, widget, time_format)
 
 
-def save_to_excel():
+def on_tl_listbox_left_double_click(event):
+    global team_leader_name
+    cs = tl_listbox.curselection()
+    tl_name_selected.config(text=tl_listbox.get(cs))
+    team_leader_name = tl_listbox.get(cs)
+    print(f"Loading : {team_leader_name}")
+    clear_cells()
+    load_delay_wb()
+    line_status()
+
+
+# def open_delay_file(event):  # opens the delay report file manually
+#     tl_listbox.curselection()
+#     os.startfile(delay_report_path)
+
+
+def on_tl_listbox_right_double_click(event):
+    tl_listbox.curselection()
+    new_team_leader_name = simpledialog.askstring(
+        "Input",
+        "Enter the new TL name:",
+    )
+
+    # Check if the user cancelled the simpledialog
+    if new_team_leader_name is None:
+        return
+
+    new_delay_report_path = (
+        delays_dir_path
+        / f"Delay Report {new_team_leader_name} {delays_dir_path.name}.xlsx"
+    )
+
+    # 1. Update the Excel cell
+    delay_ws = delay_report_wb["Sheet1"]
+    set_cell(delay_ws, 7, 7, new_team_leader_name)
+
+    # Save the changes to the current file before renaming
+    delay_report_wb.save(str(delay_report_path))
+
+    # 2. Rename the file
+    if not new_delay_report_path.exists():
+        delay_report_path.rename(new_delay_report_path)
+        messagebox.showinfo(
+            title="Success", message=f"Renamed to {new_delay_report_path.name}"
+        )
+    else:
+        messagebox.showwarning("Warning", "A file with that name already exists!")
+
+    refresh_delays_folder()
+
+
+def save_delay_wb():
     global delay_report_path
 
     if not team_leader_name:
@@ -464,7 +494,7 @@ def save_to_excel():
 
     temp_delay_report_wb.save(str(delay_report_path))
     clear_cells()
-    load_from_excel()
+    load_delay_wb()
     line_status()
     print(f"Saved successfully : {team_leader_name}")
 
@@ -495,31 +525,29 @@ def set_entry_status(entry, var_name, default_val=0):
         entry.config(style="success.TEntry")
         globals()[var_name] = 1
 
-
-def line_status():
-    for entry_name, config in ENTRIES_CONFIG.items():
-        entry = globals().get(entry_name)
-        var_name = config["var"]
-        set_entry_status(entry, var_name)
-
     # TODO : No vehicle + "."
     #     v1_entry_widget = globals().get("v1_entry")
     #     w1_entry_widget = globals().get("w1_entry")
     #     v1_entry_widget.insert(0, ".")
     #     w1_entry_widget.insert(0, "No vehicle")
 
-    v1_entry_widget = globals().get("v1_entry")
-    w1_entry_widget = globals().get("w1_entry")
-    if w1_entry_widget or frame4_workers_var.get():
+
+def line_status():
+    for entry_name, config in ENTRIES_CONFIG.items():
+        entry = globals()[entry_name]
+        var_name = config["var"]
+        set_entry_status(entry, var_name)
+
+    if w1_entry.get() == "" and frame4_workers_var.get() == 0:
         for entry_name in WORKER_ENTRIES:
-            entry = globals().get(entry_name)
-            entry.config(style="success.TEntry")
-        globals()["worker1_var"] = 1
-    else:
-        for entry_name in WORKER_ENTRIES:
-            entry = globals().get(entry_name)
+            entry = globals()[entry_name]
             entry.config(style="danger.TEntry")
         globals()["worker1_var"] = 0
+    else:
+        for entry_name in WORKER_ENTRIES:
+            entry = globals()[entry_name]
+            entry.config(style="success.TEntry")
+        globals()["worker1_var"] = 1
 
     status_check()
 
@@ -541,6 +569,138 @@ def check_path_exists(path):
     except Exception as e:
         print(f"An error occurred while checking the path: {e}")
         return False
+
+
+def extract_date_from_path(path):
+    # Get the last 2 components, which should be the date and week num
+    str_date = path.name  # The last component of the path (should be the date)
+
+    week_info = (
+        path.parent.name
+    )  # The second last component (should be 'Working Week Nxx')
+
+    # Extract week number from week_info
+    week_num = week_info.split("N")[-1]  # Assumes format 'Working Week Nxx'
+
+    # Convert the string date to a datetime object
+    dt_date = datetime.strptime(str_date, "%d.%m.%y")
+
+    return str_date, dt_date, week_num
+
+
+def extract_src_path_from_date(str_date, dt_date, week_num):
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(dt_date)
+
+    # Creating the WW Delay Table
+    weekly_delay_name = f"Weekly Delay table {week_num}.xlsx"
+    weekly_delay_f_path = delays_dir_path.parent
+    weekly_delay_path = weekly_delay_f_path / weekly_delay_name
+
+    # Creating the CIIM Daily Report Table file path
+    daily_report_name = derive_report_name(str_date)
+    daily_report_f_path = paths["day"]
+    daily_report_path = daily_report_f_path / daily_report_name
+
+    print(daily_report_path)
+    print(weekly_delay_path)
+
+    return daily_report_path, weekly_delay_path
+
+
+def transfer_data(
+    source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
+):
+    # Load the workbooks and worksheets in read_only mode for the source file
+    src_wb = load_workbook(source_file, read_only=True)
+    src_ws = src_wb.active
+
+    dest_wb = load_workbook(destination_file)
+    dest_ws = dest_wb[dest_sheet_name] if dest_sheet_name else dest_wb.active
+
+    src_header = {
+        cell.value: col_num + 1
+        for col_num, cell in enumerate(src_ws[3])
+        if cell.value in mappings
+    }
+    dest_header = {
+        cell.value: col_num + 1
+        for col_num, cell in enumerate(dest_ws[3])
+        if cell.value in mappings.values()
+    }
+
+    dest_row_counter = dest_start_row
+    observation_col = src_header.get("Observations", None)
+
+    # Stream through rows using an iterator to minimize memory consumption
+    for row_num, row in enumerate(src_ws.iter_rows(min_row=4, values_only=True), 4):
+        if observation_col:
+            print("Filtering Cancelled works")
+            observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
+            if observation_value and "cancel" not in observation_value.lower():
+                continue  # Skip this row
+
+        for src_col, dest_col in mappings.items():
+            if src_col in src_header and dest_col in dest_header:
+                dest_ws.cell(
+                    row=dest_row_counter, column=dest_header[dest_col]
+                ).value = row[
+                    src_header[src_col] - 1
+                ]  # -1 because row is 0-indexed
+
+        dest_row_counter += 1
+
+    dest_wb.save(destination_file)
+
+
+def transfer_data_generic(mapping, dest_sheet, filter_observation=None):
+    if not delays_dir_path:
+        messagebox.showerror(
+            title="Error", message="Please select the delays folder and try again."
+        )
+        return
+
+    # Prompt the user for the starting row
+    dest_start_row = simpledialog.askinteger(
+        "Input", "Enter the starting row:", minvalue=4
+    )
+
+    if not dest_start_row:
+        return  # Exits if the dialog was closed without entering a value or if it's zero
+
+    # Ask the user for confirmation
+    confirm_transfer = messagebox.askyesno(
+        "Confirm Transfer",
+        f"Are you sure you want to transfer the data to row {dest_start_row}?",
+    )
+    if not confirm_transfer:
+        return
+
+    str_date, dt_date, week_num = extract_date_from_path(delays_dir_path)
+    daily_report_path, weekly_delay_path = extract_src_path_from_date(
+        str_date, dt_date, week_num
+    )
+
+    try:
+        transfer_data(
+            daily_report_path,
+            weekly_delay_path,
+            mapping,
+            dest_start_row,
+            dest_sheet_name=dest_sheet,
+        )
+        messagebox.showinfo("Success", "Data transferred successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+
+def transfer_data_to_weekly_delay():
+    transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
+
+
+def transfer_data_to_weekly_cancelled():
+    transfer_data_generic(
+        TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
+    )
 
 
 def derive_paths_from_date(selected_date):
@@ -806,155 +966,6 @@ def write_data_to_previous_report(src_path, target_date, target_directory, mappi
     )
 
 
-def extract_date_from_path(path):
-    # Get the last 2 components, which should be the date and week num
-    str_date = path.name  # The last component of the path (should be the date)
-
-    week_info = (
-        path.parent.name
-    )  # The second last component (should be 'Working Week Nxx')
-
-    # Extract week number from week_info
-    week_num = week_info.split("N")[-1]  # Assumes format 'Working Week Nxx'
-
-    # Convert the string date to a datetime object
-    dt_date = datetime.strptime(str_date, "%d.%m.%y")
-
-    return str_date, dt_date, week_num
-
-
-def extract_src_path_from_date(str_date, dt_date, week_num):
-    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(dt_date)
-
-    # Creating the WW Delay Table
-    weekly_delay_name = f"Weekly Delay table {week_num}.xlsx"
-    weekly_delay_f_path = delays_dir_path.parent
-    weekly_delay_path = weekly_delay_f_path / weekly_delay_name
-
-    # Creating the CIIM Daily Report Table file path
-    daily_report_name = derive_report_name(str_date)
-    daily_report_f_path = paths["day"]
-    daily_report_path = daily_report_f_path / daily_report_name
-
-    print(daily_report_path)
-    print(weekly_delay_path)
-
-    return daily_report_path, weekly_delay_path
-
-
-def transfer_data(
-    source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
-):
-    # Load the workbooks and worksheets in read_only mode for the source file
-    src_wb = load_workbook(source_file, read_only=True)
-    src_ws = src_wb.active
-
-    dest_wb = load_workbook(destination_file)
-    dest_ws = dest_wb[dest_sheet_name] if dest_sheet_name else dest_wb.active
-
-    src_header = {
-        cell.value: col_num + 1
-        for col_num, cell in enumerate(src_ws[3])
-        if cell.value in mappings
-    }
-    dest_header = {
-        cell.value: col_num + 1
-        for col_num, cell in enumerate(dest_ws[3])
-        if cell.value in mappings.values()
-    }
-
-    dest_row_counter = dest_start_row
-    observation_col = src_header.get("Observations", None)
-
-    # Stream through rows using an iterator to minimize memory consumption
-    for row_num, row in enumerate(src_ws.iter_rows(min_row=4, values_only=True), 4):
-        if observation_col:
-            print("Filtering Cancelled works")
-            observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
-            if observation_value and "cancel" not in observation_value.lower():
-                continue  # Skip this row
-
-        for src_col, dest_col in mappings.items():
-            if src_col in src_header and dest_col in dest_header:
-                dest_ws.cell(
-                    row=dest_row_counter, column=dest_header[dest_col]
-                ).value = row[
-                    src_header[src_col] - 1
-                ]  # -1 because row is 0-indexed
-
-        dest_row_counter += 1
-
-    dest_wb.save(destination_file)
-
-
-def transfer_data_generic(mapping, dest_sheet, filter_observation=None):
-    if not delays_dir_path:
-        messagebox.showerror(
-            title="Error", message="Please select the delays folder and try again."
-        )
-        return
-
-    # Prompt the user for the starting row
-    dest_start_row = simpledialog.askinteger(
-        "Input", "Enter the starting row:", minvalue=4
-    )
-
-    if not dest_start_row:
-        return  # Exits if the dialog was closed without entering a value or if it's zero
-
-    # Ask the user for confirmation
-    confirm_transfer = messagebox.askyesno(
-        "Confirm Transfer",
-        f"Are you sure you want to transfer the data to row {dest_start_row}?",
-    )
-    if not confirm_transfer:
-        return
-
-    str_date, dt_date, week_num = extract_date_from_path(delays_dir_path)
-    daily_report_path, weekly_delay_path = extract_src_path_from_date(
-        str_date, dt_date, week_num
-    )
-
-    try:
-        transfer_data(
-            daily_report_path,
-            weekly_delay_path,
-            mapping,
-            dest_start_row,
-            dest_sheet_name=dest_sheet,
-        )
-        messagebox.showinfo("Success", "Data transferred successfully!")
-    except Exception as e:
-        messagebox.showerror("Error", f"An error occurred: {e}")
-
-
-def transfer_data_to_weekly_delay():
-    transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
-
-
-def transfer_data_to_weekly_cancelled():
-    transfer_data_generic(
-        TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
-    )
-
-
-def refresh_delays_folder():
-    global delays_dir_path, tl_list
-
-    if not delays_dir_path:
-        return
-
-    # Generate sorted list of file stems in the directory
-    tl_list = sorted(
-        child.stem for child in delays_dir_path.iterdir() if child.is_file()
-    )
-
-    print(tl_list)
-    tl_listbox.delete(0, END)
-    for tl_name in tl_list:
-        tl_listbox.insert(END, tl_name)
-
-
 def hide_all_frames():
     for frame in frames.values():
         frame.pack_forget()
@@ -1019,8 +1030,13 @@ app = ttk.Window(
 )
 
 # Variables
+username = ""
 # Paths
 CIIM_FOLDER_PATH = Path("/")
+delays_dir_path = Path("/")
+construction_wp_path = Path("/")
+delay_report_path = Path("/")
+selected_date = ""
 # Tkinter variables
 team_leader_name = ""
 status_color = IntVar()
@@ -1029,11 +1045,6 @@ dc_day, dc_month, dc_week, dc_year = StringVar(), StringVar(), StringVar(), Stri
 start_time, end_time, reason_var, worker1_var, vehicle1_var = 0, 0, 0, 0, 0
 dc_selected_date = ""
 fc_selected_date = ""
-# File and folder paths
-delays_dir_path = Path("/")
-construction_wp_path = Path("/")
-delay_report_path = Path("/")
-selected_date = ""
 # Lists and associated data
 tl_list = []
 cp_dates = []
@@ -1255,7 +1266,7 @@ menu1_frame2 = ttk.LabelFrame(frames["Delays Creator"], text="Team Leaders")
 menu1_frame2.grid(row=1, column=0, sticky="wens", padx=5, pady=5)
 dc_tl_listbox = Listbox(menu1_frame2)
 dc_tl_listbox.pack(fill="both", expand=True)
-dc_tl_listbox.bind("<Double-1>", dc_tl_selected)
+dc_tl_listbox.bind("<Double-1>", dc_on_listbox_double_click)
 
 # Menu 2 - Create Folders
 # Frame 1 - Calendar
@@ -1288,7 +1299,7 @@ create_button = ttk.Button(
 )
 create_button.grid(row=4, column=2, sticky="es", pady=10)
 
-# Menu 2 - Delays Manager
+# Menu 3 - Delays Manager
 # Frame 1 - Folder select
 menu3_frame1 = ttk.LabelFrame(frames["Delays Manager"], style="light")
 menu3_frame1.grid(row=0, column=0, sticky="wens", padx=5, pady=15)
@@ -1308,8 +1319,8 @@ menu3_frame2 = ttk.LabelFrame(
 menu3_frame2.grid(row=1, column=0, sticky="wens", padx=5)
 tl_listbox = Listbox(menu3_frame2, bd=0, width=40)
 tl_listbox.pack(fill="both", expand=True)
-tl_listbox.bind("<Double-1>", go)
-tl_listbox.bind("<Double-3>", change_tl_name)
+tl_listbox.bind("<Double-1>", on_tl_listbox_left_double_click)
+tl_listbox.bind("<Double-3>", on_tl_listbox_right_double_click)
 # Frame 3 - Name + Status
 menu3_frame3 = ttk.LabelFrame(
     frames["Delays Manager"],
@@ -1373,7 +1384,7 @@ create_and_grid_label(menu3_frame4, "", 12, 1, "we")
 create_and_grid_label(menu3_frame4, "      Vehicles", 4, 2, "e")
 v1_entry = create_and_grid_entry(menu3_frame4, 4, 3, "e")
 
-# check boxes
+# Check Boxes
 frame4_workers_var = IntVar()
 frame4_workers_cb = ttk.Checkbutton(
     menu3_frame4,
@@ -1400,7 +1411,7 @@ frame4_vehicles_cb = ttk.Checkbutton(
 frame4_vehicles_cb.grid(row=5, column=3, sticky="e")
 
 
-# Create the toolbar frame
+# Toolbar Frame
 toolbar_frame = ttk.Frame(frames["Delays Manager"])
 
 # Create buttons (or any other widgets) for the toolbar
@@ -1420,12 +1431,12 @@ transfer_to_delay_button = ttk.Button(
     style="secondary",
     state="disabled",
 )
-transfer_to_delay_button.pack(side=LEFT, fill="both", expand=True, padx=10)
+transfer_to_delay_button.pack(side=LEFT, fill="both", expand=True)
 
 # Position the toolbar frame at the bottom of "Delays Manager" frame
 
 save_button = ttk.Button(
-    toolbar_frame, text="Save", command=save_to_excel, style="success", state="disabled"
+    toolbar_frame, text="Save", command=save_delay_wb, style="success", state="disabled"
 )
 save_button.pack(side=RIGHT, fill="both", expand=True)
 refresh_button = ttk.Button(
