@@ -55,21 +55,24 @@ def get_ciim_folder_path_from_file(file_path):
     return path.parent.parent.parent
 
 
-def get_initial_delays_path():
+def get_potential_week_num():
     # Constructing the initial path for the filedialog
     paths = define_related_paths()  # Get the Paths dictionary
     delays_path = paths["delays"]
     today = date.today()  # Get today's date
-    current_yr = today.year  # Get the current year
-    curr_week_num = today.isocalendar()[
-        1
-    ]  # Get the current week number (ISO week number)
+
+    # Adjust so that Sunday is the start of the new week
+    adjusted_day = today + timedelta(days=1)
+
+    current_yr = adjusted_day.year
+    curr_week_num = adjusted_day.isocalendar()[1]
 
     # Check for the existence of the folder for the current week
     # and decrement the week number until it finds an existing folder.
     while curr_week_num > 0:  # Ensures the loop doesn't go below week 1
         potential_path = delays_path / str(current_yr) / f"WW{curr_week_num:02}"
         if potential_path.exists():
+            print(curr_week_num)
             return potential_path  # Return the existing path
         curr_week_num -= 1  # Decrement the week number to check the previous week
 
@@ -82,7 +85,7 @@ def open_delays_folder():
     global delays_dir_path, tl_list
 
     delays_dir_path = filedialog.askdirectory(
-        title="Select the Delays folder", initialdir=get_initial_delays_path()
+        title="Select the Delays folder", initialdir=get_potential_week_num()
     )
     delays_dir_path = Path(delays_dir_path)
     print(f"The Delays folder Path is : {delays_dir_path}")
@@ -206,9 +209,9 @@ def combo_selected(event):
     dc_tl_listbox.delete(0, END)
     for tl_name in team_leaders_list:
         dc_tl_listbox.insert(END, tl_name)
-
-    get_latest_username_from_file()
-    print(username)
+    # TODO : Fix the username lag
+    # get_latest_username_from_file()
+    # print(username)
 
     construction_wp_workbook.close()
 
@@ -443,7 +446,7 @@ def on_tl_listbox_right_double_click(event):
         "Input",
         "Enter the new TL name:",
     )
-
+    new_team_leader_name = new_team_leader_name.strip()
     # Check if the user cancelled the simpledialog
     if new_team_leader_name is None:
         return
@@ -458,7 +461,8 @@ def on_tl_listbox_right_double_click(event):
     set_cell(delay_ws, 7, 7, new_team_leader_name)
 
     # Save the changes to the current file before renaming
-    delay_report_wb.save(str(delay_report_path))
+    delay_report_wb.save(delay_report_path)
+    tl_name_selected.config(text="None")
 
     # 2. Rename the file
     if not new_delay_report_path.exists():

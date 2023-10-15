@@ -5,16 +5,17 @@ import pandas as pd
 import re
 from tkinter import Tk, filedialog, messagebox
 import ttkbootstrap as ttk
+import warnings
 
 
 def convert_decimal_to_time(value):
     if pd.notna(value):  # Skip conversion for NaN values
-        days = int(value)
-        hours = int((value - days) * 24)
-        minutes = int(((value - days) * 24 * 60) % 60)
-        seconds = int(((value - days) * 24 * 60 * 60) % 60)
-        return pd.Timestamp('1900-01-01').replace(day=1, hour=hours, minute=minutes, second=seconds).round(
-            freq='T').time()
+        total_seconds = (
+            value - int(value)
+        ) * 86400  # convert fraction of day to total seconds
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return pd.Timestamp(1900, 1, 1, int(hours), int(minutes), int(seconds)).time()
     else:
         return None
 
@@ -31,11 +32,22 @@ def copy_matching_files(src_folder, dst_folder, pattern):
 
 
 def process_file(file_path, csv_dst):
-    df = pd.read_excel(file_path, skiprows=2, usecols='B, D:O, S, U, W:AB, AD:AE')
-    if pd.api.types.is_numeric_dtype(df['Date [DD/MM/YY]']):
-        df['Date [DD/MM/YY]'] = pd.to_datetime(df['Date [DD/MM/YY]'], unit='D', origin='1899-12-30')
-    else:
-        df['Date [DD/MM/YY]'] = pd.to_datetime(df['Date [DD/MM/YY]'], format='%d/%m/%Y', errors='coerce')
+    df = pd.read_excel(file_path, skiprows=2, usecols="B, D:O, S, U, W:AB, AD:AE")
+
+    # Check if the 'Date [DD/MM/YY]' column is already in datetime format
+    if df["Date [DD/MM/YY]"].dtype != "datetime64[ns]":
+        # Then check if it's of string type and attempt date parsing.
+        if df["Date [DD/MM/YY]"].dtype == "object":
+            try:
+                df["Date [DD/MM/YY]"] = pd.to_datetime(
+                    df["Date [DD/MM/YY]"], format="%d/%m/%Y", errors="coerce"
+                )
+            except:
+                pass  # or you can print some error message or log it
+        else:
+            df["Date [DD/MM/YY]"] = pd.to_datetime(
+                df["Date [DD/MM/YY]"], unit="D", origin="1899-12-30"
+            )
 
     for column in TIME_COLUMNS:
         if pd.api.types.is_numeric_dtype(df[column]):
@@ -43,7 +55,7 @@ def process_file(file_path, csv_dst):
 
     filename = os.path.basename(file_path).replace(".xlsx", ".csv")
     output_file = os.path.join(csv_dst, filename)
-    df.to_csv(output_file, index=False, encoding='utf-8')
+    df.to_csv(output_file, index=False, encoding="utf-8")
 
 
 def extract_and_convert_to_csv():
@@ -71,20 +83,27 @@ def extract_and_convert_to_csv():
 
 
 TIME_COLUMNS = [
-    'T.P Start [Time]',
-    'T.P End [Time]',
-    'Actual Start Time (TL):',
-    'Actual Finish Time (TL):',
-    'Difference',
-    'Actual work time'
+    "T.P Start [Time]",
+    "T.P End [Time]",
+    "Actual Start Time (TL):",
+    "Actual Finish Time (TL):",
+    "Difference",
+    "Actual work time",
 ]
 
 root = Tk()
 root.geometry("200x200")
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 csv_conv_label = ttk.Label(root, text="Holla Senior")
 csv_conv_label.pack(pady=20)
-btn_convert = ttk.Button(root, text='Choose folder', command=extract_and_convert_to_csv, width=25, style='Success')
+btn_convert = ttk.Button(
+    root,
+    text="Choose folder",
+    command=extract_and_convert_to_csv,
+    width=25,
+    style="Success",
+)
 btn_convert.pack(pady=20)
 
 root.mainloop()
