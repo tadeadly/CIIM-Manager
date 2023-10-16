@@ -707,6 +707,24 @@ def transfer_data_to_weekly_cancelled():
     )
 
 
+def derive_dates(selected_date):
+    """Derive all related paths from a given date including multiple date formats."""
+    day, month, year = [
+        selected_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]
+    ]
+    week = selected_date.strftime(
+        "%U"
+    )  # returns the week number considering the first day of the week as Sunday
+
+    formatted_dates = {
+        "slash": f"{day}/{month}/{year[-2:]}",
+        "dot": f"{day}.{month}.{year[-2:]}",
+        "compact": f"{year[-2:]}{month}{day}",
+    }
+
+    return formatted_dates, week
+
+
 def derive_paths_from_date(selected_date):
     """Derive all related paths from a given date including multiple date formats."""
     c_day, c_month, c_year = [
