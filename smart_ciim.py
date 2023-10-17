@@ -167,10 +167,6 @@ def open_const_wp():
         messagebox.showerror("Error", "Please select the Construction Work Plan.")
 
 
-def update_combo_list():
-    dates_combobox["values"] = cp_dates
-
-
 def get_filtered_team_leaders(construction_wp_worksheet, date):
     global TL_BLACKLIST, tl_index
 
