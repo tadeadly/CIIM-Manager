@@ -53,6 +53,12 @@ def process_file(file_path, csv_dst):
         if pd.api.types.is_numeric_dtype(df[column]):
             df[column] = df[column].apply(convert_decimal_to_time)
 
+            # Rename column if it exists in the dataframe
+        if "Team Leader\nName (Phone)" in df.columns:
+            df = df.rename(
+                columns={"Team Leader\nName (Phone)": "Team Leader\n Name (Phone)"}
+            )
+
     filename = os.path.basename(file_path).replace(".xlsx", ".csv")
     output_file = os.path.join(csv_dst, filename)
     df.to_csv(output_file, index=False, encoding="utf-8")
