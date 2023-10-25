@@ -17,7 +17,7 @@ from ttkbootstrap import Style
 def define_related_paths():
     """Define all paths relative to the global CIIM_FOLDER_PATH."""
     base_path = Path(
-        CIIM_FOLDER_PATH
+        CIIM_DIR_PATH
     )  # Convert the global CIIM_FOLDER_PATH to a Path object
 
     paths = {
@@ -70,7 +70,7 @@ def open_const_wp():
     Returns:
         tuple: Contains paths to the Construction Plan and CIIM folder.
     """
-    global construction_wp_path, CIIM_FOLDER_PATH, cp_dates, username
+    global construction_wp_path, CIIM_DIR_PATH, cp_dates, username
 
     construction_wp_path = select_file_path()
     if not construction_wp_path:
@@ -994,17 +994,17 @@ def derive_paths_from_date(selected_date):
     }
 
     paths = {
-        "year": CIIM_FOLDER_PATH / f"Working Week {c_year}",
-        "week": CIIM_FOLDER_PATH / f"Working Week {c_year}" / f"Working Week N{c_week}",
-        "day": CIIM_FOLDER_PATH
+        "year": CIIM_DIR_PATH / f"Working Week {c_year}",
+        "week": CIIM_DIR_PATH / f"Working Week {c_year}" / f"Working Week N{c_week}",
+        "day": CIIM_DIR_PATH
         / f"Working Week {c_year}"
         / f"Working Week N{c_week}"
         / f"{c_year[-2:]}{c_month}{c_day}",
-        "previous_year": CIIM_FOLDER_PATH / f"Working Week {p_year}",
-        "previous_week": CIIM_FOLDER_PATH
+        "previous_year": CIIM_DIR_PATH / f"Working Week {p_year}",
+        "previous_week": CIIM_DIR_PATH
         / f"Working Week {p_year}"
         / f"Working Week N{c_week}",
-        "previous_day": CIIM_FOLDER_PATH
+        "previous_day": CIIM_DIR_PATH
         / f"Working Week {p_year}"
         / f"Working Week N{c_week}"
         / f"{p_year[-2:]}{p_month}{p_day}",
@@ -1351,7 +1351,7 @@ style.configure("dark.TLabelframe")  # add any other styling properties
 # Variables
 username = ""
 # Paths
-CIIM_FOLDER_PATH = Path("/")
+CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
 construction_wp_path = Path("/")
 delay_report_path = Path("/")

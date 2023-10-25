@@ -1,68 +1,29 @@
-class Employee:
-    num_of_emps = 0
-    raise_amount = 1.04
-
-    def __init__(self, first, last, pay):
-        self.first = first
-        self.last = last
-        self.pay = pay
-        self.email = first + "." + last + "@company.com"
-
-        Employee.num_of_emps += 1
-
-    def fullname(self):
-        return "{} {}".format(self.first, self.last)
-
-    def apply_raise(self):
-        self.pay = int(self.pay * self.raise_amount)
-
-    @classmethod
-    def set_raise_amt(cls, amount):
-        cls.raise_amount = amount
-
-    @classmethod
-    def from_string(cls, emp_str):
-        first, last, pay = emp_str.split("-")
-        return cls(first, last, pay)
-
-    @staticmethod
-    def is_workday(day):
-        if day.weekday() == 5 or day.weekday() == 6:
-            return False
-        return True
+import tkinter as tk
+import ttkbootstrap as ttk
 
 
-class Developer(Employee):  # Inheritance
-    raise_amount = 1.10
+def simple_progress():
+    progress_win = tk.Toplevel()
+    progress_win.title("Simple Progress...")
+    progress_win.geometry("300x50")
 
-    def __init__(self, first, last, pay, prog_lang):
-        super().__init__(first, last, pay)
-        self.prog_lang = prog_lang
-
-
-class Manager(Employee):
-    def __init__(self, first, last, pay, employees=None):
-        super().__init__(first, last, pay)
-        if employees is None:
-            self.employees = []
-        else:
-            self.employees = employees
-
-    def add_emp(self, emp):
-        if emp not in self.employees:
-            self.employees.append(emp)
-
-    def remove_emp(self, emp):
-        if emp in self.employees:
-            self.employees.append(emp)
-
-    def print_emp(self):
-        for emp in self.employees:
-            print("-->", emp.fullname())
+    progress_bar = ttk.Progressbar(
+        progress_win,
+        orient="horizontal",
+        length=280,
+        mode="determinate",
+        maximum=10,
+        style="success",
+    )
+    progress_bar.grid(row=0, column=0, padx=10, pady=20)
+    progress_bar["value"] = 5
 
 
-dev_1 = Developer("Corey", "Schafer", 40000, "Python")
-dev_2 = Developer("Mark", "Pol", 50000, "Java")
+app = tk.Tk()
+app.title("Test App")
+app.geometry("300x300")
 
-mgr_1 = Manager("Sue", "Smith", 90000, [dev_1])
-mgr_1.print_emp()
+btn = ttk.Button(app, text="Show Progress", command=simple_progress)
+btn.pack(pady=50)
+
+app.mainloop()

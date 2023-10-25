@@ -16,9 +16,7 @@ from ttkbootstrap import Style
 
 def define_related_paths():
     """Define all paths relative to the global CIIM_FOLDER_PATH."""
-    base_path = Path(
-        CIIM_FOLDER_PATH
-    )  # Convert the global CIIM_FOLDER_PATH to a Path object
+    base_path = CIIM_DIR_PATH
 
     paths = {
         "delays": base_path / "General Updates" / "Delays+Cancelled works",
@@ -55,10 +53,18 @@ def get_latest_username_from_file():
     return None
 
 
-def get_ciim_folder_path_from_file(file_path):
+def get_ciim_dir_path_from_file(file_path):
     """Retrieve the CIIM folder path from the given file path."""
-    path = Path(file_path)
-    return path.parent.parent.parent
+    return file_path.parent.parent.parent
+
+
+def select_const_wp():
+    """
+    Opens a file dialog for the user to select an Excel file.
+    """
+    pattern = "WW*Construction Work Plan*.xlsx"
+    path = filedialog.askopenfilename(filetypes=[("Excel Files", pattern)])
+    return Path(path) if path else None
 
 
 def open_const_wp():
@@ -66,21 +72,18 @@ def open_const_wp():
     Handle the opening and reading of the construction work plan file.
     Fetches paths for the Construction Plan and CIIM folder, and extracts unique dates from the worksheet.
     At the end, prompts the user to provide their username.
-
-    Returns:
-        tuple: Contains paths to the Construction Plan and CIIM folder.
     """
-    global construction_wp_path, CIIM_FOLDER_PATH, cp_dates, username
+    global construction_wp_path, CIIM_DIR_PATH, cp_dates, username
 
-    construction_wp_path = select_file_path()
+    construction_wp_path = select_const_wp()
     if not construction_wp_path:
         return
 
     construction_wp_workbook = load_workbook(filename=construction_wp_path)
     print(f"The Construction Plan Path is : {construction_wp_path}")
 
-    CIIM_FOLDER_PATH = get_ciim_folder_path_from_file(construction_wp_path)
-    print(f"The CIIM folder Path is : {CIIM_FOLDER_PATH}")
+    CIIM_DIR_PATH = get_ciim_dir_path_from_file(construction_wp_path)
+    print(f"The CIIM folder Path is : {CIIM_DIR_PATH}")
 
     cp_dates = extract_unique_dates_from_worksheet(
         construction_wp_workbook["Const. Plan"]
@@ -90,19 +93,7 @@ def open_const_wp():
 
     # username = prompt_for_username()
 
-    return construction_wp_path, CIIM_FOLDER_PATH
-
-
-def select_file_path():
-    """
-    Opens a file dialog for the user to select an Excel file.
-
-    Returns:
-        Path: Path object of the selected file. If no file is selected, returns None.
-    """
-    pattern = "WW*Construction Work Plan*.xlsx"
-    path = filedialog.askopenfilename(filetypes=[("Excel Files", pattern)])
-    return Path(path) if path else None
+    return construction_wp_path, CIIM_DIR_PATH
 
 
 def extract_unique_dates_from_worksheet(worksheet):
@@ -155,7 +146,9 @@ def prompt_for_username():
         username = current_username
     else:
         while True:
-            username = simpledialog.askstring("Input", "Please enter your name:")
+            username = simpledialog.askstring(
+                "Input", "Please enter your name:", parent=app
+            )
             if username and username.strip():
                 username = username.strip()
                 break
@@ -222,8 +215,8 @@ def dc_combo_selected(event):
 
     construction_wp_workbook.close()
 
-    dates_combobox.configure(bootstyle="default")
-    menu1_frame2.configure(bootstyle="primary")
+    dates_combobox.configure(bootstyle="success")
+    # menu1_frame2.configure(bootstyle="primary")
 
 
 def update_combo_list():
@@ -244,11 +237,25 @@ def dc_on_listbox_double_click(event):
     """
 
     global dc_selected_team_leader, tl_num
-    dc_listbox_selection_index = dc_tl_listbox.curselection()
-    dc_tl_listbox.itemconfig(dc_listbox_selection_index, bg="#ED969D")
-    dc_selected_team_leader = str(dc_tl_listbox.get(dc_listbox_selection_index))
-    tl_num = tl_index[dc_listbox_selection_index[0]]
-    create_delay_wb()
+    dc_listbox_selection_indices = dc_tl_listbox.curselection()
+
+    successful_creations = 0  # Counter to accumulate successful creations
+
+    # Loop through the tuple of selected indices
+    for index in dc_listbox_selection_indices:
+        dc_selected_team_leader = str(dc_tl_listbox.get(index))
+        tl_num = tl_index[index]
+        dc_tl_listbox.itemconfig(index, bg="#35BC64")  # red - #ED969D
+        success, status_msg = create_delay_wb()
+        if success:
+            successful_creations += 1
+
+    # Consolidated message
+    if successful_creations > 0:
+        consolidated_msg = "Delay Reports were created successfully!"
+        messagebox.showinfo("Success", consolidated_msg)
+    else:
+        messagebox.showerror("Error", "No reports were created!")
 
 
 def create_delay_wb():
@@ -278,6 +285,7 @@ def create_delay_wb():
         status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} already exists!\n{dc_day_path}"
         messagebox.showerror("Error", status_msg)
         print(status_msg)
+        return False, status_msg  # Indicate failure and return
     else:
         print(f"Creating Delay Report {dc_selected_team_leader}")
         copy_and_rename_template(
@@ -295,9 +303,7 @@ def create_delay_wb():
         fill_delay_ws_cells(dc_delay_ws, cp_ws, tl_num)
 
         dc_delay_wb.save(dc_delay_report_path)
-
-        status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} created!\n{dc_day_path}"
-        messagebox.showinfo(None, status_msg)
+        return True, None  # Indicate success and return
 
 
 def copy_and_rename_template(src_path, dest_path, new_name):
@@ -534,8 +540,8 @@ def dm_combo_selected(event):
     # Set configurations
     set_config(save_button, state="normal")
     set_config(transfer_button, state="normal")
-    dm_dates_combobox.configure(bootstyle="default")
-    menu3_frame2.configure(bootstyle="primary")
+    dm_dates_combobox.configure(bootstyle="success")
+    # menu3_frame2.configure(bootstyle="primary")
 
 
 def on_tl_listbox_left_double_click(event):
@@ -565,10 +571,10 @@ def on_tl_listbox_right_double_click(event):
     """
     global team_leader_name
 
+    print(f"Renaming {team_leader_name}")
     # Request the new team leader name
     new_team_leader_name = simpledialog.askstring(
-        "Input",
-        "Enter the new TL name:",
+        "Enter input", "Enter the new TL name:", parent=app
     )
     if new_team_leader_name:
         new_team_leader_name = new_team_leader_name.strip()
@@ -577,9 +583,9 @@ def on_tl_listbox_right_double_click(event):
 
     # Confirmation of new file name
     new_delay_report_path = construct_delay_report_path(new_team_leader_name)
-    confirm = messagebox.askokcancel(
+    confirm = messagebox.askyesno(
         "Confirmation",
-        f"Are you sure you want to rename to {new_delay_report_path.name}?",
+        f"Old name : {team_leader_name}\nNew name : {new_delay_report_path.name[:-5]}\n\nAre you sure you want to rename?",
     )
     if not confirm:
         return
@@ -594,7 +600,7 @@ def on_tl_listbox_right_double_click(event):
 
     if not new_delay_report_path.exists():
         delay_report_path.rename(new_delay_report_path)
-        messagebox.showinfo("Success", f"Renamed to {new_delay_report_path.name}")
+        messagebox.showinfo("Success", f"File renamed successfully!")
     else:
         messagebox.showwarning("Warning", "A file with that name already exists!")
         return
@@ -705,6 +711,10 @@ def status_check():
         and vehicle1_var == 1
     ):
         set_config(frame3_status, text="Completed", bootstyle="success")
+        dm_listbox_selection_index = dm_tl_listbox.curselection()
+        dm_tl_listbox.itemconfig(
+            dm_listbox_selection_index, bg="#35BC64"
+        )  # red - #ED969D
 
         status_color = 1
     else:
@@ -814,6 +824,28 @@ def extract_src_path_from_date(str_date, dt_date, week_num):
     return daily_report_path, weekly_delay_path
 
 
+def are_files_locked(src_filepath: Path, dest_filepath: Path) -> bool:
+    return is_file_locked(src_filepath) or is_file_locked(dest_filepath)
+
+
+def is_file_locked(filepath: Path) -> bool:
+    locked = None
+    file_object = None
+    if filepath.exists():
+        try:
+            # Try to open and close the file in append mode.
+            # If this fails, the file is locked.
+            file_object = filepath.open("a")
+            if file_object:
+                locked = False
+        except IOError:
+            locked = True
+        finally:
+            if file_object:
+                file_object.close()
+    return locked
+
+
 def transfer_data(
     source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
 ):
@@ -869,38 +901,106 @@ def transfer_data(
     dest_wb.save(destination_file)
 
 
-def transfer_data_generic(mapping, dest_sheet, filter_observation=None):
-    """
-    Generic function to facilitate data transfer using a mapping and potentially applying a filter.
+def center_window(window, parent):
+    window.update_idletasks()  # To ensure the size is calculated
 
-    Parameters:
-    - mapping (dict): Column mapping between source and destination files.
-    - dest_sheet (str): Sheet name in the destination file.
-    - filter_observation (str, optional): A value to filter rows based on the "Observations" column in the source file.
+    # Calculate position x, y coordinates
+    x = parent.winfo_x() + (parent.winfo_width() // 2) - (window.winfo_width() // 2)
+    y = parent.winfo_y() + (parent.winfo_height() // 2) - (window.winfo_height() // 2)
+
+    window.geometry(f"+{x}+{y}")
+    window.deiconify()  # Show the window
+
+
+def get_multiple_inputs(parent):
+    # Create a new Toplevel window
+    dialog = ttk.Toplevel(parent)
+    dialog.withdraw()  # Hide the window initially
+    dialog.title("Enter Rows")
+
+    # Create Label and Entry for Delay
+    ttk.Label(dialog, text="Enter the starting row for Delay:").grid(
+        row=0, column=0, padx=5, pady=5
+    )
+    delay_entry = ttk.Entry(dialog)
+    delay_entry.grid(row=0, column=1, padx=5, pady=5)
+
+    # Create Label and Entry for Cancelled
+    ttk.Label(dialog, text="Enter the starting row for Cancelled:").grid(
+        row=1, column=0, padx=5, pady=5
+    )
+    cancelled_entry = ttk.Entry(dialog)
+    cancelled_entry.grid(row=1, column=1, padx=5, pady=5)
+
+    # Store the results
+    results = [None, None]
+
+    # Button to close the dialog
+    def on_ok():
+        # Retrieve values from the Entry widgets
+        delay_value = delay_entry.get().strip()
+        cancelled_value = cancelled_entry.get().strip()
+
+        # Convert to int or None if blank
+        delay_int = int(delay_value) if delay_value else None
+        cancelled_int = int(cancelled_value) if cancelled_value else None
+
+        # Save results in some container or variable that's accessible outside of this function
+        results[0] = delay_int
+        results[1] = cancelled_int
+        dialog.destroy()
+
+    submit_button = ttk.Button(dialog, text="Submit", command=on_ok)
+    submit_button.grid(row=2, columnspan=2, padx=5, pady=5)
+
+    # Center the window and then display it
+    center_window(dialog, parent)
+    dialog.wait_window()
+
+    return tuple(results)
+
+
+def transfer_combined_data():
     """
+    Prompts the user for two starting rows (one for delay and one for cancelled) and transfers data to the respective sheets.
+    """
+
     if delays_dir_path == Path("/"):
         messagebox.showerror(
             title="Error", message="Please select the date of the delay."
         )
         return
 
-    # Prompt the user for the starting row
-    dest_start_row = simpledialog.askinteger(
-        "Input", "Enter the starting row:", minvalue=4
-    )
-
-    if not dest_start_row:
-        return  # Exits if the dialog was closed without entering a value or if it's zero
-
     str_date, dt_date, week_num = extract_date_from_path(delays_dir_path)
     daily_report_path, weekly_delay_path = extract_src_path_from_date(
         str_date, dt_date, week_num
     )
 
+    # Check if files are locked
+    if are_files_locked(daily_report_path, weekly_delay_path):
+        messagebox.showwarning(
+            "File Locked",
+            f"Please close the following Excel files before proceeding:\n{daily_report_path.name}\n{weekly_delay_path.name}",
+        )
+        return
+
+    # Prompt the user for the starting rows for both delay and cancelled
+    rows = get_multiple_inputs(app)
+    if rows is None:
+        return
+
+    dest_start_row_delay, dest_start_row_cancelled = rows
+
+    # If both are blank, exit
+    if dest_start_row_delay is None and dest_start_row_cancelled is None:
+        messagebox.showerror(title="Error", message="No data was entered!")
+        return
+
     # Ask the user for confirmation by entering "CONFIRM"
     user_input = simpledialog.askstring(
         "Confirmation",
-        f"src: {daily_report_path.name}\ndsn: {weekly_delay_path.name}\nrow: {dest_start_row}\n\n\nType 'CONFIRM' to proceed.",
+        f"src: {daily_report_path.name}\ndsn: {weekly_delay_path.name}\nDelay row: {dest_start_row_delay}\nCancelled row: {dest_start_row_cancelled}\n\n\nType 'CONFIRM' to proceed.",
+        parent=app,
     )
     confirm_transfer = user_input == "CONFIRM"
 
@@ -909,32 +1009,46 @@ def transfer_data_generic(mapping, dest_sheet, filter_observation=None):
         return
 
     try:
-        transfer_data(
-            daily_report_path,
-            weekly_delay_path,
-            mapping,
-            dest_start_row,
-            dest_sheet_name=dest_sheet,
-        )
+        # Transfer for delay
+        if dest_start_row_delay is not None:
+            transfer_data(
+                daily_report_path,
+                weekly_delay_path,
+                TO_WEEKLY_DELAY_MAPPINGS,
+                dest_start_row_delay,
+                dest_sheet_name="Work Delay",
+            )
+
+        # Transfer for cancelled
+        if dest_start_row_cancelled is not None:
+            transfer_data(
+                daily_report_path,
+                weekly_delay_path,
+                TO_WEEKLY_CANCELLED_MAPPING,
+                dest_start_row_cancelled,
+                dest_sheet_name="Work Cancelled",
+            )
         messagebox.showinfo("Success", "Data transferred successfully!")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
-def transfer_data_to_weekly_delay():
-    """
-    Uses the generic data transfer function to specifically transfer data to the "Work Delay" sheet.
-    """
-    transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
-
-
-def transfer_data_to_weekly_cancelled():
-    """
-    Uses the generic data transfer function to specifically transfer data to the "Work Cancelled" sheet with a filter for cancelled works.
-    """
-    transfer_data_generic(
-        TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
-    )
+#
+# def transfer_data_to_weekly_delay():
+#     """
+#     Uses the generic data transfer function to specifically transfer data to the "Work Delay" sheet.
+#     """
+#     transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
+#
+#
+# def transfer_data_to_weekly_cancelled():
+#     """
+#     Uses the generic data transfer function to specifically transfer data to the "Work Cancelled" sheet with a filter for cancelled works.
+#     """
+#     transfer_data_generic(
+#         TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
+#     )
+#
 
 
 def derive_dates(selected_date):
@@ -994,17 +1108,17 @@ def derive_paths_from_date(selected_date):
     }
 
     paths = {
-        "year": CIIM_FOLDER_PATH / f"Working Week {c_year}",
-        "week": CIIM_FOLDER_PATH / f"Working Week {c_year}" / f"Working Week N{c_week}",
-        "day": CIIM_FOLDER_PATH
+        "year": CIIM_DIR_PATH / f"Working Week {c_year}",
+        "week": CIIM_DIR_PATH / f"Working Week {c_year}" / f"Working Week N{c_week}",
+        "day": CIIM_DIR_PATH
         / f"Working Week {c_year}"
         / f"Working Week N{c_week}"
         / f"{c_year[-2:]}{c_month}{c_day}",
-        "previous_year": CIIM_FOLDER_PATH / f"Working Week {p_year}",
-        "previous_week": CIIM_FOLDER_PATH
+        "previous_year": CIIM_DIR_PATH / f"Working Week {p_year}",
+        "previous_week": CIIM_DIR_PATH
         / f"Working Week {p_year}"
         / f"Working Week N{c_week}",
-        "previous_day": CIIM_FOLDER_PATH
+        "previous_day": CIIM_DIR_PATH
         / f"Working Week {p_year}"
         / f"Working Week N{c_week}"
         / f"{p_year[-2:]}{p_month}{p_day}",
@@ -1110,7 +1224,7 @@ def create_folders():
 
     if paths["day"].exists():
         day_created_message = (
-            f'{c_formatted_dates["compact"]} folder was created successfully'
+            f'{c_formatted_dates["compact"]} folder was created successfully!'
         )
         messagebox.showinfo(None, day_created_message)
 
@@ -1183,6 +1297,7 @@ def create_folders():
                 p_formatted_dates["slash"],
                 paths["previous_day"],
                 TO_DAILY_REPORT_MAPPINGS,
+                paths["previous_day"] / derive_report_name(p_formatted_dates["dot"]),
             )
 
 
@@ -1194,7 +1309,7 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
     target_datetime = pd.to_datetime(target_date, format="%d/%m/%y", errors="coerce")
     formatted_target_date = target_datetime.strftime("%d.%m.%y")
     report_filename = derive_report_name(formatted_target_date)
-    target_report_path = target_directory / report_filename
+    target_report_path = Path(target_directory / report_filename)
 
     usecols_value = list(mappings.values())
     df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
@@ -1230,12 +1345,22 @@ def write_data_to_report(src_path, target_date, target_directory, mappings):
     write_data_to_excel(src_path, target_date, target_directory, mappings)
 
 
-def write_data_to_previous_report(src_path, target_date, target_directory, mappings):
+def write_data_to_previous_report(
+    src_path, target_date, target_directory, mappings, target_report_path
+):
     """
     Write data to the previous day's report. Prompt the user to select a starting row.
     """
-
     # Prompt the user for the starting row
+
+    while is_file_locked(target_report_path):
+        response = messagebox.askretrycancel(
+            "File Locked", f"Please close {target_report_path.name} and try again!"
+        )
+        if not response:  # If user selects "Cancel"
+            return
+    # Continue with the rest of the function after this block
+
     start_row_delay = simpledialog.askinteger(
         "Input", "Enter the starting row:", minvalue=4
     )
@@ -1272,8 +1397,17 @@ def change_theme(theme_name):
 
 
 def show_frame(frame):
+    global current_frame
+
+    # If the frame to show is the same as the currently active one, return early.
+    if current_frame == frame:
+        return
+
     hide_all_frames()
     frame.pack(fill="both", expand=True)
+
+    # Update the current_frame
+    current_frame = frame
 
     # If the frame is not the "Start Page" frame, then create the menubar
     # if frame != frames["Start Page"]:
@@ -1327,11 +1461,16 @@ def on_closing():
 
 
 # Root config
-app = ttk.Window(
-    themename="cosmo", size=(768, 522), resizable=(0, 0), title="Smart CIIM"
-)
+# app = ttk.Window(
+#     themename="cosmo", size=(768, 522), resizable=(0, 0), title="Smart CIIM"
+# )
 
-app.iconbitmap("icon.ico")
+app = Tk()
+app.resizable(0, 0)
+app.title("Smart CIIM")
+app.geometry("768x552")
+
+# app.iconbitmap("icon.ico")
 
 
 style = Style()
@@ -1341,17 +1480,14 @@ style.configure("light.TLabelframe")  # add any other styling properties
 
 # Define a custom dark style for Labelframe
 style.configure("dark.TLabelframe")  # add any other styling properties
-
-# app = Tk()
-# app.resizable(0, 0)
-# app.title("Smart CIIM")
-# app.geometry("768x552")
+style.configure("StartStyle.success.TButton", font=("Sans sarif", 12))
 
 
 # Variables
 username = ""
+current_frame = None
 # Paths
-CIIM_FOLDER_PATH = Path("/")
+CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
 construction_wp_path = Path("/")
 delay_report_path = Path("/")
@@ -1378,14 +1514,14 @@ DELAY_TEMPLATE = "Delay Report template v.02.xlsx"
 DAILY_REPORT_TEMPLATE = "CIIM Report Table v.1.xlsx"
 # Themes
 THEMES = [
+    "cosmo",
     "journal",
     "minty",
-    "cosmo",
     "cerculean",
     "yeti",
-    "solar",
     "superhero",
     "darkly",
+    "cyborg",
 ]
 # Those TLs won't appear in the Listbox that creates delays
 TL_BLACKLIST = [
@@ -1515,10 +1651,10 @@ welcome_label.pack(pady=100)
 
 start_button = ttk.Button(
     frames["Start Page"],
-    text="Get Started!",
+    text="Get Started",
     command=open_const_wp,
     width=20,
-    style="success",
+    style="StartStyle.success.TButton",
 )
 start_button.pack(pady=20)
 show_frame(frames["Start Page"])
@@ -1538,10 +1674,14 @@ dates_combobox.pack(side="left")
 
 # Frame 2 - TLs Listbox
 menu1_frame2 = ttk.LabelFrame(frames["Delays Creator"], text="Team Leaders")
-menu1_frame2.grid(row=1, column=0, sticky="wens", padx=5, pady=5)
-dc_tl_listbox = Listbox(menu1_frame2)
+menu1_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+dc_tl_listbox = Listbox(
+    menu1_frame2,
+    borderwidth=4,
+    selectmode=ttk.EXTENDED,
+)
 dc_tl_listbox.pack(fill="both", expand=True)
-dc_tl_listbox.bind("<Double-1>", dc_on_listbox_double_click)
+dc_tl_listbox.bind("<Return>", dc_on_listbox_double_click)
 
 # Menu 2 - Create Folders
 # Frame 1 - Calendar
@@ -1589,10 +1729,15 @@ dm_dates_combobox.set("Date")
 dm_dates_combobox.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_combobox.pack(side="left")
 
+# TODO : CONTINUE EDITING THE STYLE OF LISTBOX
 # Frame 2 - Team Leaders Listbox
 menu3_frame2 = ttk.LabelFrame(frames["Delays Manager"], text="Team Leaders")
-menu3_frame2.grid(row=1, column=0, sticky="wens", padx=5, pady=5)
-dm_tl_listbox = Listbox(menu3_frame2, bd=0, width=40)
+menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+dm_tl_listbox = Listbox(
+    menu3_frame2,
+    width=40,
+    borderwidth=3,
+)
 dm_tl_listbox.pack(fill="both", expand=True)
 dm_tl_listbox.bind("<Double-1>", on_tl_listbox_left_double_click)
 dm_tl_listbox.bind("<Double-3>", on_tl_listbox_right_double_click)
@@ -1600,7 +1745,7 @@ dm_tl_listbox.bind("<Delete>", delete_selected_item)
 
 # Frame 3 - Name + Status
 menu3_frame3 = ttk.LabelFrame(frames["Delays Manager"], text="Status")
-menu3_frame3.grid(row=0, column=1, sticky="wens", padx=5, pady=5)
+menu3_frame3.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
 ttk.Label(menu3_frame3, text="Selected: ").grid(
     row=0, column=0, sticky="e", pady=5, padx=5
 )
@@ -1612,7 +1757,6 @@ ttk.Label(menu3_frame3, text="Status: ").grid(row=0, column=2, sticky="e", pady=
 frame3_status = ttk.Label(
     menu3_frame3,
     text="Not completed",
-    # foreground="#ED254E",
     font=("Helvetica", 9, "bold"),
     style="danger",
 )
@@ -1665,26 +1809,36 @@ save_button.pack(side=RIGHT, fill="both", expand=True)
 
 toolbar_frame.grid(row=999, column=0, sticky="sew", columnspan=2)
 
-transfer_button = ttk.Menubutton(
+transfer_button = ttk.Button(
     toolbar_frame,
     text="Transfer",
     state="disabled",
+    command=transfer_combined_data,
+    style="ButtonStyle.TButton",
 )
 transfer_button.pack(side=LEFT, fill="both", expand=True)
-# Create Transfer menu
-transfer_menu = ttk.Menu(transfer_button)
-# Add items to our inside menu
-item_var = StringVar()
-transfer_menu.add_radiobutton(
-    label="Weekly delay sheet", variable=item_var, command=transfer_data_to_weekly_delay
-)
-transfer_menu.add_radiobutton(
-    label="Weekly cancelled sheet",
-    variable=item_var,
-    command=transfer_data_to_weekly_cancelled,
-)
-# Associate the inside menu with the menubutton
-transfer_button["menu"] = transfer_menu
+
+
+# transfer_button = ttk.Menubutton(
+#     toolbar_frame,
+#     text="Transfer",
+#     state="disabled",
+# )
+# transfer_button.pack(side=LEFT, fill="both", expand=True)
+# # Create Transfer menu
+# transfer_menu = ttk.Menu(transfer_button)
+# # Add items to our inside menu
+# item_var = StringVar()
+# transfer_menu.add_radiobutton(
+#     label="Weekly delay sheet", variable=item_var, command=transfer_combined_data
+# )
+# transfer_menu.add_radiobutton(
+#     label="Weekly cancelled sheet",
+#     variable=item_var,
+#     command=transfer_combined_data,
+# )
+# # Associate the inside menu with the menubutton
+# transfer_button["menu"] = transfer_menu
 
 app.protocol("WM_DELETE_WINDOW", on_closing)
 app.mainloop()
