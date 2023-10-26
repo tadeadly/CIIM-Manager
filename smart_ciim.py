@@ -10,7 +10,7 @@ from ttkbootstrap.dialogs import Querybox
 import ttkbootstrap as ttk
 from datetime import timedelta, datetime
 import time
-from tkinter import simpledialog, messagebox
+from tkinter import simpledialog, messagebox, Menu
 from ttkbootstrap import Style
 
 
@@ -215,7 +215,7 @@ def dc_combo_selected(event):
 
     construction_wp_workbook.close()
 
-    dates_combobox.configure(bootstyle="success")
+    dates_combobox.configure(bootstyle="default")
     # menu1_frame2.configure(bootstyle="primary")
 
 
@@ -245,7 +245,7 @@ def dc_on_listbox_double_click(event):
     for index in dc_listbox_selection_indices:
         dc_selected_team_leader = str(dc_tl_listbox.get(index))
         tl_num = tl_index[index]
-        dc_tl_listbox.itemconfig(index, bg="#35BC64")  # red - #ED969D
+        dc_tl_listbox.itemconfig(index, background="#35BC64")  # red - #ED969D
         success, status_msg = create_delay_wb()
         if success:
             successful_creations += 1
@@ -472,7 +472,7 @@ def load_delay_wb():
     except AttributeError:
         pass
 
-    delay_report_path = delays_dir_path / f"{team_leader_name}.xlsx"
+    delay_report_path = get_delay_report_path_for_tl(team_leader_name)
     delay_report_wb = load_workbook(filename=delay_report_path)
     delay_report_ws = delay_report_wb["Sheet1"]
 
@@ -493,15 +493,27 @@ def clear_listbox():
 
 def populate_listbox():
     """
-    Populate dm_tl_listbox with filenames present in the delays_dir_path directory.
+    Populate dm_tl_listbox with team leader names present in the delays_dir_path directory.
     Filenames are sorted by their stem (name without extension).
     """
-
+    global tl_names_dict
     check_and_create_path(delays_dir_path)
+
+    tl_names_dict = {}
+
     for child in sorted(delays_dir_path.iterdir(), key=lambda x: x.stem):
         if child.is_file():
             tl_name = child.stem
-            dm_tl_listbox.insert(END, tl_name)
+
+            # Extract the team leader's name using regex
+            match = re.search(r"Delay Report ([\w\s]+) \d{2}\.\d{2}\.\d{2}", tl_name)
+            if match:
+                leader_name = match.group(1)
+                tl_names_dict[leader_name] = tl_name
+
+    # Populate the listbox with only the keys (leader names)
+    for leader_name in tl_names_dict.keys():
+        dm_tl_listbox.insert(END, leader_name)
 
 
 def construct_delay_report_path(tl_name=None):
@@ -540,8 +552,17 @@ def dm_combo_selected(event):
     # Set configurations
     set_config(save_button, state="normal")
     set_config(transfer_button, state="normal")
-    dm_dates_combobox.configure(bootstyle="success")
+    dm_dates_combobox.configure(bootstyle="default")
     # menu3_frame2.configure(bootstyle="primary")
+
+
+def get_selected_item_from_listbox():
+    cs = dm_tl_listbox.curselection()
+    if not cs:
+        return None
+    name = dm_tl_listbox.get(cs[0])
+    name = tl_names_dict[name]
+    return name
 
 
 def on_tl_listbox_left_double_click(event):
@@ -551,25 +572,31 @@ def on_tl_listbox_left_double_click(event):
     and sets line status.
     """
     global team_leader_name
-    cs = dm_tl_listbox.curselection()
-    if not cs:  # Check if cs is empty
+    team_leader_name = get_selected_item_from_listbox()
+    if not team_leader_name:
         return
-    team_leader_name = dm_tl_listbox.get(cs[0])
 
     tl_name_selected.config(text=team_leader_name)
-
     print(f"Loading : {team_leader_name}")
     clear_cells()
     load_delay_wb()
     line_status()
 
 
-def on_tl_listbox_right_double_click(event):
+def get_delay_report_path_for_tl(team_leader):
+    return delays_dir_path / f"{team_leader}.xlsx"
+
+
+def on_tl_listbox_rename(event):
     """
     Handle the event when a team leader name in the listbox is right double-clicked.
     Allows the user to rename a team leader and updates the related Excel file accordingly.
     """
     global team_leader_name
+
+    team_leader_name = get_selected_item_from_listbox()
+
+    print(team_leader_name)
 
     print(f"Renaming {team_leader_name}")
     # Request the new team leader name
@@ -596,10 +623,11 @@ def on_tl_listbox_right_double_click(event):
     set_cell(delay_ws, 17, 1, new_team_leader_name)
 
     # Save changes and rename the file
-    delay_report_wb.save(delay_report_path)
+    temp_delay_report_path = get_delay_report_path_for_tl(team_leader_name)
+    delay_report_wb.save(temp_delay_report_path)
 
     if not new_delay_report_path.exists():
-        delay_report_path.rename(new_delay_report_path)
+        temp_delay_report_path.rename(new_delay_report_path)
         messagebox.showinfo("Success", f"File renamed successfully!")
     else:
         messagebox.showwarning("Warning", "A file with that name already exists!")
@@ -629,7 +657,7 @@ def on_tl_listbox_right_double_click(event):
         print(f"{new_team_leader_name} not found in the list box.")
 
 
-def delete_selected_item(event):
+def on_tl_listbox_delete(event):
     """
     Handle the event to delete a selected item from the listbox and the actual file.
     """
@@ -639,6 +667,7 @@ def delete_selected_item(event):
     if not cs:
         return
     selected_item = dm_tl_listbox.get(cs[0])
+    selected_item = tl_names_dict[selected_item]
 
     # Construct the full path to the file
     file_path = delays_dir_path / f"{selected_item}.xlsx"
@@ -703,6 +732,7 @@ def status_check():
     """
     global status_color
 
+    dm_listbox_selection_index = dm_tl_listbox.curselection()
     if (
         start_time == 1
         and end_time == 1
@@ -711,9 +741,8 @@ def status_check():
         and vehicle1_var == 1
     ):
         set_config(frame3_status, text="Completed", bootstyle="success")
-        dm_listbox_selection_index = dm_tl_listbox.curselection()
         dm_tl_listbox.itemconfig(
-            dm_listbox_selection_index, bg="#35BC64"
+            dm_listbox_selection_index, background="#35BC64"
         )  # red - #ED969D
 
         status_color = 1
@@ -1460,6 +1489,15 @@ def on_closing():
     app.destroy()
 
 
+def show_context_menu(event):
+    """
+    Show the context menu on right-click.
+    """
+    cs = dm_tl_listbox.curselection()
+    if cs:
+        context_menu.post(event.x_root, event.y_root)
+
+
 # Root config
 # app = ttk.Window(
 #     themename="cosmo", size=(768, 522), resizable=(0, 0), title="Smart CIIM"
@@ -1470,8 +1508,6 @@ app.resizable(0, 0)
 app.title("Smart CIIM")
 app.geometry("768x552")
 
-# app.iconbitmap("icon.ico")
-
 
 style = Style()
 
@@ -1480,8 +1516,9 @@ style.configure("light.TLabelframe")  # add any other styling properties
 
 # Define a custom dark style for Labelframe
 style.configure("dark.TLabelframe")  # add any other styling properties
-style.configure("StartStyle.success.TButton", font=("Sans sarif", 12))
 
+# Define a custom style for Button and make it rounded
+style.configure("StartStyle.TButton", font=("Sans serif", 10))
 
 # Variables
 username = ""
@@ -1513,6 +1550,7 @@ frame4_vehicles_var = IntVar()
 DELAY_TEMPLATE = "Delay Report template v.02.xlsx"
 DAILY_REPORT_TEMPLATE = "CIIM Report Table v.1.xlsx"
 # Themes
+tl_names_dict = {}
 THEMES = [
     "cosmo",
     "journal",
@@ -1654,7 +1692,7 @@ start_button = ttk.Button(
     text="Get Started",
     command=open_const_wp,
     width=20,
-    style="StartStyle.success.TButton",
+    style="StartStyle.TButton",
 )
 start_button.pack(pady=20)
 show_frame(frames["Start Page"])
@@ -1677,7 +1715,7 @@ menu1_frame2 = ttk.LabelFrame(frames["Delays Creator"], text="Team Leaders")
 menu1_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 dc_tl_listbox = Listbox(
     menu1_frame2,
-    borderwidth=4,
+    border=5,
     selectmode=ttk.EXTENDED,
 )
 dc_tl_listbox.pack(fill="both", expand=True)
@@ -1729,19 +1767,24 @@ dm_dates_combobox.set("Date")
 dm_dates_combobox.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_combobox.pack(side="left")
 
-# TODO : CONTINUE EDITING THE STYLE OF LISTBOX
 # Frame 2 - Team Leaders Listbox
 menu3_frame2 = ttk.LabelFrame(frames["Delays Manager"], text="Team Leaders")
 menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 dm_tl_listbox = Listbox(
     menu3_frame2,
-    width=40,
-    borderwidth=3,
+    width=38,
+    border=5,
 )
+
 dm_tl_listbox.pack(fill="both", expand=True)
 dm_tl_listbox.bind("<Double-1>", on_tl_listbox_left_double_click)
-dm_tl_listbox.bind("<Double-3>", on_tl_listbox_right_double_click)
-dm_tl_listbox.bind("<Delete>", delete_selected_item)
+# Create a context menu
+context_menu = Menu(app, tearoff=0)
+context_menu.add_command(label="Rename", command=lambda: on_tl_listbox_rename(None))
+context_menu.add_command(label="Delete", command=lambda: on_tl_listbox_delete(None))
+# Binding the right-click event to show the context menu
+dm_tl_listbox.bind("<Button-3>", show_context_menu)
+dm_tl_listbox.bind("<Delete>", on_tl_listbox_delete)
 
 # Frame 3 - Name + Status
 menu3_frame3 = ttk.LabelFrame(frames["Delays Manager"], text="Status")
