@@ -216,7 +216,6 @@ def dc_combo_selected(event):
     construction_wp_workbook.close()
 
     dates_combobox.configure(bootstyle="default")
-    # menu1_frame2.configure(bootstyle="primary")
 
 
 def update_combo_list():
@@ -228,7 +227,7 @@ def update_combo_list():
     dm_dates_combobox["values"] = cp_dates
 
 
-def dc_on_listbox_double_click(event):
+def dc_on_listbox_double_click():
     """
     Handle the event of a double click on the list box of team leaders.
 
@@ -245,7 +244,7 @@ def dc_on_listbox_double_click(event):
     for index in dc_listbox_selection_indices:
         dc_selected_team_leader = str(dc_tl_listbox.get(index))
         tl_num = tl_index[index]
-        dc_tl_listbox.itemconfig(index, background="#35BC64")  # red - #ED969D
+        dc_tl_listbox.itemconfig(index, background="#53b575")  # red - #ED969D
         success, status_msg = create_delay_wb()
         if success:
             successful_creations += 1
@@ -506,7 +505,9 @@ def populate_listbox():
             tl_name = child.stem
 
             # Extract the team leader's name using regex
-            match = re.search(r"Delay Report ([\w\s]+) \d{2}\.\d{2}\.\d{2}", tl_name)
+            match = re.search(
+                r"Delay Report ([\w\s]+(?: \+ [\w\s]+)?) \d{2}\.\d{2}\.\d{2}", tl_name
+            )
             if match:
                 leader_name = match.group(1)
                 tl_names_dict[leader_name] = tl_name
@@ -561,7 +562,6 @@ def get_selected_item_from_listbox():
     if not cs:
         return None
     name = dm_tl_listbox.get(cs[0])
-    name = tl_names_dict[name]
     return name
 
 
@@ -572,11 +572,13 @@ def on_tl_listbox_left_double_click(event):
     and sets line status.
     """
     global team_leader_name
+
+    tl_name_selected.config(text=get_selected_item_from_listbox())
     team_leader_name = get_selected_item_from_listbox()
+    team_leader_name = tl_names_dict[team_leader_name]
+
     if not team_leader_name:
         return
-
-    tl_name_selected.config(text=team_leader_name)
     print(f"Loading : {team_leader_name}")
     clear_cells()
     load_delay_wb()
@@ -595,13 +597,14 @@ def on_tl_listbox_rename(event):
     global team_leader_name
 
     team_leader_name = get_selected_item_from_listbox()
+    team_leader_name = tl_names_dict[team_leader_name]
 
     print(team_leader_name)
 
     print(f"Renaming {team_leader_name}")
     # Request the new team leader name
     new_team_leader_name = simpledialog.askstring(
-        "Enter input", "Enter the new TL name:", parent=app
+        "Enter input", "Enter the new Team leader name:", parent=app
     )
     if new_team_leader_name:
         new_team_leader_name = new_team_leader_name.strip()
@@ -742,7 +745,7 @@ def status_check():
     ):
         set_config(frame3_status, text="Completed", bootstyle="success")
         dm_tl_listbox.itemconfig(
-            dm_listbox_selection_index, background="#35BC64"
+            dm_listbox_selection_index, background="#53b575"
         )  # red - #ED969D
 
         status_color = 1
@@ -875,6 +878,13 @@ def is_file_locked(filepath: Path) -> bool:
     return locked
 
 
+def format_time(time_obj):
+    if time_obj:
+        return time_obj.strftime("%H:%M")
+    else:
+        return "None"
+
+
 def transfer_data(
     source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None
 ):
@@ -900,12 +910,17 @@ def transfer_data(
         cell.value: col_num + 1
         for col_num, cell in enumerate(src_ws[3])
         if cell.value in mappings
+        or any(cell.value in key for key in mappings if isinstance(key, tuple))
     }
+
     dest_header = {
         cell.value: col_num + 1
         for col_num, cell in enumerate(dest_ws[3])
         if cell.value in mappings.values()
     }
+
+    # Print all headers from the source file
+    print("Source headers:", [cell.value for cell in src_ws[3]])
 
     dest_row_counter = dest_start_row
     observation_col = src_header.get("Observations", None)
@@ -915,19 +930,70 @@ def transfer_data(
         if observation_col:
             observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
             if observation_value and "cancel" not in observation_value.lower():
+                print(
+                    f"Skipping row {row_num} due to observation value: {observation_value}"
+                )  # Debugging print statement
                 continue  # Skip this row
 
         for src_col, dest_col in mappings.items():
-            if src_col in src_header and dest_col in dest_header:
-                dest_ws.cell(
-                    row=dest_row_counter, column=dest_header[dest_col]
-                ).value = row[
-                    src_header[src_col] - 1
-                ]  # -1 because row is 0-indexed
+            if isinstance(src_col, tuple) and src_col == (
+                "T.P Start [Time]",
+                "T.P End [Time]",
+            ):
+                start_time_col = src_header.get("T.P Start [Time]")
+                end_time_col = src_header.get("T.P End [Time]")
+
+                # Debugging checks:
+                if not start_time_col:
+                    print(
+                        f"'T.P Start [Time]' not found in source header for row {row_num}."
+                    )
+                if not end_time_col:
+                    print(
+                        f"'T.P End [Time]' not found in source header for row {row_num}."
+                    )
+                if dest_col not in dest_header:
+                    print(
+                        f"'{dest_col}' not found in destination header for row {row_num}."
+                    )
+
+                # Example of the if-condition and writing process
+                if start_time_col and end_time_col and dest_col in dest_header:
+                    ww_start_time = format_time(row[start_time_col - 1])
+                    ww_end_time = format_time(row[end_time_col - 1])
+
+                    # This is an example, replace 'key_col' with whatever column
+                    # should be checked to determine if the row is effectively "empty"
+                    if row[observation_col - 1]:
+                        combined_time = f"{ww_start_time}-{ww_end_time}"
+                        dest_ws.cell(
+                            row=dest_row_counter, column=dest_header[dest_col]
+                        ).value = combined_time
+                        print(
+                            f"Writing combined time to row {dest_row_counter} in destination."
+                        )  # Debugging print statement
+                    else:
+                        # Break out of the loop if you find an empty key cell, assuming you're iterating row by row
+                        break
+                else:
+                    print(
+                        f"Missing columns in source or destination for row {row_num}."
+                    )  # Debugging print statement
+
+            else:
+                if src_col in src_header and dest_col in dest_header:
+                    dest_ws.cell(
+                        row=dest_row_counter, column=dest_header[dest_col]
+                    ).value = row[src_header[src_col] - 1]
+                else:
+                    print(
+                        f"Missing columns '{src_col}' or '{dest_col}' in source or destination for row {row_num}."
+                    )  # Debugging print statement
 
         dest_row_counter += 1
 
     dest_wb.save(destination_file)
+    src_wb.close()
 
 
 def center_window(window, parent):
@@ -1415,7 +1481,14 @@ def change_theme(theme_name):
     print(current_theme)
 
     dark_themes = THEMES[-3:]
-    labelframes_to_change = [menu1_frame1, menu2_frame1, menu3_frame1, menu3_frame4]
+    labelframes_to_change = [
+        menu1_frame1,
+        menu2_frame1,
+        menu3_frame1,
+        menu3_frame4,
+        menu1_frame2,
+        menu3_frame2,
+    ]
 
     if current_theme in dark_themes:
         for labelframe in labelframes_to_change:
@@ -1506,7 +1579,16 @@ def show_context_menu(event):
 app = Tk()
 app.resizable(0, 0)
 app.title("Smart CIIM")
-app.geometry("768x552")
+
+# Geometry
+app_width = 750
+app_height = 550
+screen_width = app.winfo_screenwidth()
+screen_height = app.winfo_screenheight()
+x = (screen_width / 2) - (app_width / 2)
+y = (screen_height / 2) - app_height
+
+app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 
 
 style = Style()
@@ -1519,6 +1601,9 @@ style.configure("dark.TLabelframe")  # add any other styling properties
 
 # Define a custom style for Button and make it rounded
 style.configure("StartStyle.TButton", font=("Sans serif", 10))
+
+app.rowconfigure(0, weight=1)
+app.columnconfigure(0, weight=1)
 
 # Variables
 username = ""
@@ -1619,6 +1704,7 @@ TO_WEEKLY_CANCELLED_MAPPING = {
     "EP": "ISR section {EP}",
 }
 
+
 # Centralized list of entries and their configurations
 ENTRIES_CONFIG = {
     "frame4_stime_entry": {
@@ -1699,7 +1785,9 @@ show_frame(frames["Start Page"])
 
 # Menu 1 - Create Delays
 # Frame 1 - Date select
-menu1_frame1 = ttk.LabelFrame(frames["Delays Creator"], text="", style="light")
+menu1_frame1 = ttk.LabelFrame(
+    frames["Delays Creator"], text="Date Select", style="light"
+)
 menu1_frame1.grid(row=0, column=0, sticky="wens", padx=5, pady=5)
 dc_select_date_label = ttk.Label(menu1_frame1, text="   Select date:  ")
 dc_select_date_label.pack(side="left")
@@ -1711,15 +1799,17 @@ dates_combobox.bind("<<ComboboxSelected>>", dc_combo_selected)
 dates_combobox.pack(side="left")
 
 # Frame 2 - TLs Listbox
-menu1_frame2 = ttk.LabelFrame(frames["Delays Creator"], text="Team Leaders")
-menu1_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-dc_tl_listbox = Listbox(
-    menu1_frame2,
-    border=5,
-    selectmode=ttk.EXTENDED,
+menu1_frame2 = ttk.LabelFrame(
+    frames["Delays Creator"], text="Team Leaders", style="light"
 )
+menu1_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+dc_tl_listbox = Listbox(menu1_frame2, border=5, selectmode=ttk.EXTENDED)
 dc_tl_listbox.pack(fill="both", expand=True)
 dc_tl_listbox.bind("<Return>", dc_on_listbox_double_click)
+dc_create_button = ttk.Button(
+    menu1_frame2, text="Create", command=dc_on_listbox_double_click, width=20
+)
+dc_create_button.pack(side="bottom", pady=5)
 
 # Menu 2 - Create Folders
 # Frame 1 - Calendar
@@ -1768,15 +1858,19 @@ dm_dates_combobox.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_combobox.pack(side="left")
 
 # Frame 2 - Team Leaders Listbox
-menu3_frame2 = ttk.LabelFrame(frames["Delays Manager"], text="Team Leaders")
+menu3_frame2 = ttk.LabelFrame(
+    frames["Delays Manager"], text="Team Leaders", style="light"
+)
 menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 dm_tl_listbox = Listbox(
     menu3_frame2,
-    width=38,
     border=5,
 )
 
-dm_tl_listbox.pack(fill="both", expand=True)
+dm_tl_listbox.pack(
+    fill="both",
+    expand=True,
+)
 dm_tl_listbox.bind("<Double-1>", on_tl_listbox_left_double_click)
 # Create a context menu
 context_menu = Menu(app, tearoff=0)
@@ -1793,17 +1887,17 @@ ttk.Label(menu3_frame3, text="Selected: ").grid(
     row=0, column=0, sticky="e", pady=5, padx=5
 )
 tl_name_selected = ttk.Label(
-    menu3_frame3, text="None", width=43, font=("Helvetica", 9, "bold")
+    menu3_frame3, text="None", width=40, font=("Helvetica", 9, "bold")
 )
 tl_name_selected.grid(row=0, column=1, sticky="w")
-ttk.Label(menu3_frame3, text="Status: ").grid(row=0, column=2, sticky="e", pady=5)
+ttk.Label(menu3_frame3, text="Status: ").grid(row=0, column=2, sticky="we", pady=5)
 frame3_status = ttk.Label(
     menu3_frame3,
     text="Not completed",
     font=("Helvetica", 9, "bold"),
     style="danger",
 )
-frame3_status.grid(row=0, column=3, sticky="e")
+frame3_status.grid(row=0, column=3, sticky="e", padx=5)
 
 # Frame 4 - Manager
 menu3_frame4 = ttk.LabelFrame(frames["Delays Manager"], style="light")
