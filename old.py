@@ -12,9 +12,6 @@ from datetime import timedelta, datetime
 import time
 from tkinter import simpledialog, messagebox, Menu
 from ttkbootstrap import Style
-from PIL import ImageTk, Image
-from ctypes import windll
-import pyglet
 
 
 def define_related_paths():
@@ -30,6 +27,32 @@ def define_related_paths():
     return paths
 
 
+def get_latest_username_from_file():
+    """
+    Fetch the latest username from the filename in the "passdown" directory.
+
+    Returns:
+        str: The extracted username from the most recently modified file in the directory.
+             Returns None if no suitable file or match is found.
+    """
+    paths = define_related_paths()
+    passdown_path = paths["passdown"]
+
+    # Getting all .xlsx files sorted by modification time
+    files = sorted(
+        passdown_path.glob("*.xlsx"),
+        key=lambda x: x.stat().st_mtime,
+        reverse=True,
+    )
+
+    if files:
+        filename = files[0].stem  # Gets the file name without the extension
+        match = re.search(r"\d{6}\.\d+\s+(\w+)", filename)
+        temp_username = match.group(1)
+        return temp_username if match else None
+    return None
+
+
 def get_ciim_dir_path_from_file(file_path):
     """Retrieve the CIIM folder path from the given file path."""
     return file_path.parent.parent.parent
@@ -39,21 +62,12 @@ def select_const_wp():
     """
     Opens a file dialog for the user to select an Excel file.
     """
-    global construction_wp_var, construction_wp_path
     pattern = "WW*Construction Work Plan*.xlsx"
     path = filedialog.askopenfilename(filetypes=[("Excel Files", pattern)])
-
-    if path:  # Check if a path was actually selected
-        construction_wp_path = Path(path)
-        construction_wp_var.set(construction_wp_path.name)  # Set the StringVar to just the filename
-        # After path has been set, update the dates
-        update_dates_based_on_file()
-    # If no path was selected, simply do nothing (i.e., leave the entry as is)
-
-    return construction_wp_path if path else None
+    return Path(path) if path else None
 
 
-def open_const_wp(event=None):
+def open_const_wp():
     """
     Handle the opening and reading of the construction work plan file.
     Fetches paths for the Construction Plan and CIIM folder, and extracts unique dates from the worksheet.
@@ -77,29 +91,9 @@ def open_const_wp(event=None):
     print(f"Dates : {cp_dates}")
     construction_wp_workbook.close()
 
-    username = username_var.get()
+    # username = prompt_for_username()
 
     return construction_wp_path, CIIM_DIR_PATH
-
-
-def update_dates_based_on_file():
-    """
-    Update the unique dates based on the selected construction work plan file.
-    """
-    global construction_wp_path, CIIM_DIR_PATH, cp_dates
-
-    if not construction_wp_path or construction_wp_path == Path("/"):
-        return
-
-    construction_wp_workbook = load_workbook(filename=construction_wp_path)
-    CIIM_DIR_PATH = get_ciim_dir_path_from_file(construction_wp_path)
-    cp_dates = extract_unique_dates_from_worksheet(
-        construction_wp_workbook["Const. Plan"]
-    )
-    construction_wp_workbook.close()
-
-    # Update any other widgets or global variables that depend on these dates here
-    # For example, if you have a Listbox displaying the dates, you'd update it here.
 
 
 def extract_unique_dates_from_worksheet(worksheet):
@@ -138,6 +132,32 @@ def process_date_cell(cell):
         return date_value.isoformat()
     except ValueError:
         return None
+
+
+def prompt_for_username():
+    """
+    Asks the user for their username.
+    Initially, it tries to verify the most recent username and if it's not a match, prompts the user to input it.
+    """
+    global username
+    current_username = get_latest_username_from_file()
+
+    if messagebox.askyesno(title="Confirmation", message=f"Is it {current_username}?"):
+        username = current_username
+    else:
+        while True:
+            username = simpledialog.askstring(
+                "Input", "Please enter your name:", parent=app
+            )
+            if username and username.strip():
+                username = username.strip()
+                break
+            else:
+                messagebox.showwarning("Warning", "Name cannot be empty!")
+
+    show_frame(frames["Delays Creator"])
+    print(username)
+    return username
 
 
 def get_filtered_team_leaders(construction_wp_worksheet, date):
@@ -207,7 +227,7 @@ def update_combo_list():
     dm_dates_combobox["values"] = cp_dates
 
 
-def dc_on_listbox_create():
+def dc_on_listbox_double_click():
     """
     Handle the event of a double click on the list box of team leaders.
 
@@ -357,7 +377,6 @@ def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_index):
     Fill specific cells of a delay worksheet with pre-defined values or patterns.
     """
 
-    username = username_entry.get()
     cells_to_fill = {
         (8, 8): username,
         (16, 5): "Foreman",
@@ -533,6 +552,7 @@ def dm_combo_selected(event):
 
     # Set configurations
     set_config(save_button, state="normal")
+    set_config(transfer_button, state="normal")
     dm_dates_combobox.configure(bootstyle="default")
     # menu3_frame2.configure(bootstyle="primary")
 
@@ -545,7 +565,7 @@ def get_selected_item_from_listbox():
     return name
 
 
-def dm_on_tl_listbox_2_click(event):
+def on_tl_listbox_left_double_click(event):
     """
     Handle the event when a team leader name in the listbox is double-clicked.
     Sets the displayed team leader name, clears previous data, loads new data,
@@ -569,7 +589,7 @@ def get_delay_report_path_for_tl(team_leader):
     return delays_dir_path / f"{team_leader}.xlsx"
 
 
-def dm_on_tl_listbox_rename(event):
+def on_tl_listbox_rename(event):
     """
     Handle the event when a team leader name in the listbox is right double-clicked.
     Allows the user to rename a team leader and updates the related Excel file accordingly.
@@ -635,12 +655,12 @@ def dm_on_tl_listbox_rename(event):
     # If the new team leader's name is found, select that item
     if new_tl_index is not None:
         dm_tl_listbox.selection_set(new_tl_index)
-        dm_on_tl_listbox_2_click(None)  # Passing None or a dummy event
+        on_tl_listbox_left_double_click(None)  # Passing None or a dummy event
     else:
         print(f"{new_team_leader_name} not found in the list box.")
 
 
-def dm_on_tl_listbox_delete(event):
+def on_tl_listbox_delete(event):
     """
     Handle the event to delete a selected item from the listbox and the actual file.
     """
@@ -667,7 +687,7 @@ def dm_on_tl_listbox_delete(event):
         file_path.unlink()
         # Remove the item from the listbox
         dm_tl_listbox.delete(cs)
-        print(f"Deleted: {file_path.name}")
+        print(f"Deleted: {file_path}")
     else:
         messagebox.showwarning("Warning", f"{selected_item} not found!")
 
@@ -987,82 +1007,31 @@ def center_window(window, parent):
     window.deiconify()  # Show the window
 
 
-def transfer_combined_data():
-    top_level = ttk.Toplevel()
-    top_level.withdraw()  # Hide the window initially
-    top_level.title("Data Entry")
-    top_level.geometry('380x280')
-    top_level.resizable(0, 0)
+def get_multiple_inputs(parent):
+    # Create a new Toplevel window
+    dialog = ttk.Toplevel(parent)
+    dialog.withdraw()  # Hide the window initially
+    dialog.title("Enter Rows")
 
-    # Center the top_level window
-    center_window(top_level, top_level.master)
-    top_level.deiconify()  # Show the window after centering
-
-    str_date, dt_date, week_num = extract_date_from_path(delays_dir_path)
-    daily_report_path, weekly_delay_path = extract_src_path_from_date(
-        str_date, dt_date, week_num
+    # Create Label and Entry for Delay
+    ttk.Label(dialog, text="Enter the starting row for Delay:").grid(
+        row=0, column=0, padx=5, pady=5
     )
+    delay_entry = ttk.Entry(dialog)
+    delay_entry.grid(row=0, column=1, padx=5, pady=5)
 
-    # Frame for input entries
-    input_frame = ttk.Frame(top_level)
-    input_frame.pack(pady=5)
+    # Create Label and Entry for Cancelled
+    ttk.Label(dialog, text="Enter the starting row for Cancelled:").grid(
+        row=1, column=0, padx=5, pady=5
+    )
+    cancelled_entry = ttk.Entry(dialog)
+    cancelled_entry.grid(row=1, column=1, padx=5, pady=5)
 
-    # Explanation Label
-    explain_label = ttk.Label(input_frame, text="Enter the row number to which you want to transfer")
-    explain_label.grid(row=0, columnspan=3, padx=30, pady=40, sticky="nsew")
+    # Store the results
+    results = [None, None]
 
-    # Label and Entry for Delay
-    delay_label = ttk.Label(input_frame, text=f"{weekly_delay_path.name} (Work Delay)")
-    delay_label.grid(row=1, columnspan=2, padx=5, pady=2, sticky="we")
-
-    delay_entry = ttk.Entry(input_frame, width=12)
-    delay_entry.grid(row=1, column=1, columnspan=2, padx=5, pady=2, sticky="e")
-
-    # Label and Entry for Cancelled
-    cancelled_label = ttk.Label(input_frame, text=f"{weekly_delay_path.name} (Work Cancelled)")
-    cancelled_label.grid(row=2, columnspan=2, padx=5, pady=2, sticky="we")
-
-    cancelled_entry = ttk.Entry(input_frame, width=12)
-    cancelled_entry.grid(row=2, column=1, columnspan=2, padx=5, pady=2, sticky="e")
-
-    # Frame for confirmation
-    confirm_frame = ttk.Frame(top_level)
-
-    # Display source, destination, and inputted rows
-    source_label = ttk.Label(confirm_frame, text=f"Source ======> {daily_report_path.name}")
-    source_label.grid(row=0, column=0, columnspan=3, pady=5, sticky="nsew")
-
-    destination_label = ttk.Label(confirm_frame, text=f"Destination <=== {weekly_delay_path.name}")
-    destination_label.grid(row=1, column=0, columnspan=3, pady=5, sticky="w")
-
-    delay_input_label = ttk.Label(confirm_frame, text="Delay sheet row: ")
-    delay_input_label.grid(row=2, column=0, pady=5, sticky="w")
-
-    cancelled_input_label = ttk.Label(confirm_frame, text="Cancelled sheet row: ")
-    cancelled_input_label.grid(row=3, column=0, pady=5, sticky="w")
-
-    seperator = ttk.Separator(master=confirm_frame)
-    seperator.grid(row=4, columnspan=3, sticky="nsew", pady=10)
-
-    # Confirmation label and entry
-    confirmation_label = ttk.Label(confirm_frame, text="Type 'CONFIRM' to proceed.")
-    confirmation_label.grid(row=5, column=0, columnspan=3, pady=5, )
-
-    confirm_entry = ttk.Entry(confirm_frame)
-    confirm_entry.grid(row=6, column=0, columnspan=3, pady=5)
-
-    # Create an empty label to occupy column=0 and push the buttons to the right
-    empty_label = ttk.Label(confirm_frame, text="")
-    empty_label.grid(row=7, column=0, sticky="w", padx=84, pady=20)
-
-    def on_confirm():
-        user_input = confirm_entry.get().strip()
-        confirm_transfer = user_input == "CONFIRM"
-
-        if not confirm_transfer:
-            messagebox.showerror(title="Error", message="Data was not transferred!")
-            return
-
+    # Button to close the dialog
+    def on_ok():
         # Retrieve values from the Entry widgets
         delay_value = delay_entry.get().strip()
         cancelled_value = cancelled_entry.get().strip()
@@ -1071,98 +1040,110 @@ def transfer_combined_data():
         delay_int = int(delay_value) if delay_value else None
         cancelled_int = int(cancelled_value) if cancelled_value else None
 
-        try:
-            # Transfer for delay
-            if delay_int is not None:
-                transfer_data(
-                    daily_report_path,
-                    weekly_delay_path,
-                    TO_WEEKLY_DELAY_MAPPINGS,
-                    delay_int,
-                    dest_sheet_name="Work Delay",
-                )
+        # Save results in some container or variable that's accessible outside of this function
+        results[0] = delay_int
+        results[1] = cancelled_int
+        dialog.destroy()
 
-            # Transfer for cancelled
-            if cancelled_int is not None:
-                transfer_data(
-                    daily_report_path,
-                    weekly_delay_path,
-                    TO_WEEKLY_CANCELLED_MAPPING,
-                    cancelled_int,
-                    dest_sheet_name="Work Cancelled",
-                )
-            messagebox.showinfo("Success", "Data transferred successfully!")
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+    submit_button = ttk.Button(dialog, text="Submit", command=on_ok)
+    submit_button.grid(row=2, columnspan=2, padx=5, pady=5)
 
-        top_level.destroy()
+    # Center the window and then display it
+    center_window(dialog, parent)
+    dialog.wait_window()
 
-    def on_cancel():
-        top_level.destroy()
+    return tuple(results)
 
-    def show_input():
-        confirm_frame.pack_forget()
-        input_frame.pack(pady=5)
 
-    def validate_input(char):
-        # Validation function to allow only numeric input
-        return char.isdigit() or char == ""
+def transfer_combined_data():
+    """
+    Prompts the user for two starting rows (one for delay and one for cancelled) and transfers data to the respective sheets.
+    """
 
-    # Apply the validation function to the Entry widgets
-    vcmd = top_level.register(validate_input)
-    delay_entry.config(validate="key", validatecommand=(vcmd, '%S'))
-    cancelled_entry.config(validate="key", validatecommand=(vcmd, '%S'))
+    if delays_dir_path == Path("/"):
+        messagebox.showerror(
+            title="Error", message="Please select the date of the delay."
+        )
+        return
 
-    def show_confirmation():
+    str_date, dt_date, week_num = extract_date_from_path(delays_dir_path)
+    daily_report_path, weekly_delay_path = extract_src_path_from_date(
+        str_date, dt_date, week_num
+    )
 
-        # Check if files are locked
-        if are_files_locked(daily_report_path, weekly_delay_path):
-            messagebox.showwarning(
-                "File Locked",
-                f"Please close the following Excel files before proceeding:\n{daily_report_path.name}\n{weekly_delay_path.name}",
+    # Check if files are locked
+    if are_files_locked(daily_report_path, weekly_delay_path):
+        messagebox.showwarning(
+            "File Locked",
+            f"Please close the following Excel files before proceeding:\n{daily_report_path.name}\n{weekly_delay_path.name}",
+        )
+        return
+
+    # Prompt the user for the starting rows for both delay and cancelled
+    rows = get_multiple_inputs(app)
+    if rows is None:
+        return
+
+    dest_start_row_delay, dest_start_row_cancelled = rows
+
+    # If both are blank, exit
+    if dest_start_row_delay is None and dest_start_row_cancelled is None:
+        messagebox.showerror(title="Error", message="No data was entered!")
+        return
+
+    # Ask the user for confirmation by entering "CONFIRM"
+    user_input = simpledialog.askstring(
+        "Confirmation",
+        f"src: {daily_report_path.name}\ndsn: {weekly_delay_path.name}\nDelay row: {dest_start_row_delay}\nCancelled row: {dest_start_row_cancelled}\n\n\nType 'CONFIRM' to proceed.",
+        parent=app,
+    )
+    confirm_transfer = user_input == "CONFIRM"
+
+    if not confirm_transfer:
+        messagebox.showerror(title="Error", message="Data was not transferred!")
+        return
+
+    try:
+        # Transfer for delay
+        if dest_start_row_delay is not None:
+            transfer_data(
+                daily_report_path,
+                weekly_delay_path,
+                TO_WEEKLY_DELAY_MAPPINGS,
+                dest_start_row_delay,
+                dest_sheet_name="Work Delay",
             )
-            top_level.destroy()
-            return
 
-        delay_input = delay_entry.get().strip()
-        cancelled_input = cancelled_entry.get().strip()
+        # Transfer for cancelled
+        if dest_start_row_cancelled is not None:
+            transfer_data(
+                daily_report_path,
+                weekly_delay_path,
+                TO_WEEKLY_CANCELLED_MAPPING,
+                dest_start_row_cancelled,
+                dest_sheet_name="Work Cancelled",
+            )
+        messagebox.showinfo("Success", "Data transferred successfully!")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
-        delay_input_label.config(text=f"Delay sheet row: {delay_input}")
-        cancelled_input_label.config(text=f"Cancelled sheet row: {cancelled_input}")
 
-        input_frame.pack_forget()  # Hide input frame
-        confirm_frame.pack(pady=5)  # Show confirmation frame
-
-    # Function to update the state of the "Confirm" button based on the Entry widgets' content
-    def update_confirm_button_state(*args):
-        delay_input = delay_entry.get().strip()
-        cancelled_input = cancelled_entry.get().strip()
-
-        if delay_input or cancelled_input:
-            next_button["state"] = "normal"
-        else:
-            next_button["state"] = "disabled"
-
-    # Bind the Entry widgets to the update function to be called whenever their content changes
-    delay_entry.bind("<KeyRelease>", update_confirm_button_state)
-    cancelled_entry.bind("<KeyRelease>", update_confirm_button_state)
-
-    # Confirm and Cancel buttons
-
-    cancel_button = ttk.Button(input_frame, text="Cancel", command=on_cancel, width=10, style="secondary")
-    cancel_button.grid(row=3, column=1, padx=5, pady=70, sticky="e")
-
-    next_button = ttk.Button(input_frame, text="Next", command=show_confirmation, width=10, state="disabled")
-    next_button.grid(row=3, column=2, padx=5, pady=70, sticky="e")
-
-    back_button = ttk.Button(confirm_frame, text="Back", command=show_input, width=10, style="secondary")
-    back_button.grid(row=7, column=1, padx=5, pady=30, sticky="e")
-
-    confirm_transfer_button = ttk.Button(confirm_frame, text="Confirm", command=on_confirm, width=10)
-    confirm_transfer_button.grid(row=7, column=2, padx=5, pady=30, sticky="e")
-
-    confirm_frame.pack(pady=5)
-    confirm_frame.pack_forget()
+#
+# def transfer_data_to_weekly_delay():
+#     """
+#     Uses the generic data transfer function to specifically transfer data to the "Work Delay" sheet.
+#     """
+#     transfer_data_generic(TO_WEEKLY_DELAY_MAPPINGS, "Work Delay")
+#
+#
+# def transfer_data_to_weekly_cancelled():
+#     """
+#     Uses the generic data transfer function to specifically transfer data to the "Work Cancelled" sheet with a filter for cancelled works.
+#     """
+#     transfer_data_generic(
+#         TO_WEEKLY_CANCELLED_MAPPING, "Work Cancelled", filter_observation="Cancel"
+#     )
+#
 
 
 def derive_dates(selected_date):
@@ -1255,24 +1236,24 @@ def pick_date():
 
     global fc_selected_date
     cal = Querybox()
-    fc_selected_date = cal.get_date(bootstyle="danger")
-    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(fc_selected_date)
-
-    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
-    if paths["day"].exists():
-        messagebox.showerror("Error", day_message_exist)
-        return
+    fc_selected_date = cal.get_date(bootstyle="primary")
+    paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(
+        fc_selected_date
+    )
 
     # Feedback using button's text
     calendar_button.config(
         text=f"WW: {fc_selected_date.strftime('%U')}     Date: {fc_selected_date.strftime('%d.%m.%Y')} "
     )
 
+    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
+    if paths["day"].exists():
+        messagebox.showerror("Error", day_message_exist)
+
     entries_state = "disabled" if paths["day"].exists() else "normal"
-    set_config(ocs_scale, state=entries_state)
-    set_config(scada_scale, state=entries_state)
+    set_config(fc_ocs_entry, state=entries_state)
+    set_config(fc_scada_entry, state=entries_state)
     set_config(create_button, state=entries_state)
-    calendar_button.config(bootstyle="success.Outline")
 
     return paths
 
@@ -1365,8 +1346,8 @@ def create_folders():
         print(f'Template not found in {paths["day"]}!')
 
     # Creating folders for entries
-    create_folders_for_entries(paths["day"], ocs_scale, "W")
-    create_folders_for_entries(paths["day"], scada_scale, "S")
+    create_folders_for_entries(paths["day"], fc_ocs_entry, "W")
+    create_folders_for_entries(paths["day"], fc_scada_entry, "S")
 
     # Creating other necessary folders
     folders_to_create = [
@@ -1378,6 +1359,13 @@ def create_folders():
     ]
     for folder in folders_to_create:
         (paths["day"] / folder).mkdir(exist_ok=True)
+
+    # Reset and configure other widgets
+    fc_ocs_entry.delete(0, END)
+    fc_scada_entry.delete(0, END)
+    set_config(fc_ocs_entry, state="disabled")
+    set_config(fc_scada_entry, state="disabled")
+    set_config(create_button, state="disabled")
 
     # Handle data report writing and copying
     if Path(construction_wp_path).parent != Path(paths["week"]):
@@ -1406,15 +1394,6 @@ def create_folders():
                 TO_DAILY_REPORT_MAPPINGS,
                 paths["previous_day"] / derive_report_name(p_formatted_dates["dot"]),
             )
-            return
-
-    # Reset and configure other widgets
-    ocs_scale.set(0)
-    scada_scale.set(0)
-    set_config(ocs_scale, state="disabled")
-    set_config(scada_scale, state="disabled")
-    set_config(create_button, state="disabled")
-    calendar_button.config(text="Browse", bootstyle="danger.Outline")
 
 
 def write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=4):
@@ -1490,43 +1469,97 @@ def write_data_to_previous_report(
     )
 
 
-def change_theme():
-    """Changes the theme of the app to the selected theme."""
-    current_theme = theme_var.get()
-    style.theme_use(current_theme)  # Set the theme
-    hour_label.configure(style="Clock.TLabel", font="digital-7 80")
-    style.configure("TButton", font=("Roboto", 9, "bold"))
+def hide_all_frames():
+    for frame in frames.values():
+        frame.pack_forget()
+
+
+def change_theme(theme_name):
+    """Changes the theme of the app to the specified theme name."""
+    style.theme_use(theme_name)  # Set the theme
     current_theme = style.theme_use()  # Retrieve the current theme's name
     print(current_theme)
 
+    dark_themes = THEMES[-3:]
+    labelframes_to_change = [
+        menu1_frame1,
+        menu2_frame1,
+        menu3_frame1,
+        menu3_frame4,
+        menu1_frame2,
+        menu3_frame2,
+    ]
 
-def show_frame(frame_name):
+    if current_theme in dark_themes:
+        for labelframe in labelframes_to_change:
+            labelframe.config(style="dark.TLabelframe")
+    else:
+        for labelframe in labelframes_to_change:
+            labelframe.config(style="light.TLabelframe")
+
+
+def show_frame(frame):
     global current_frame
 
-    for name, frame in frames.items():
-        frame.pack_forget()
-        if name == frame_name:
-            frame.pack(fill="both", expand=True)
-            current_frame = frame_name
+    # If the frame to show is the same as the currently active one, return early.
+    if current_frame == frame:
+        return
+
+    hide_all_frames()
+    frame.pack(fill="both", expand=True)
+
+    # Update the current_frame
+    current_frame = frame
+
+    # If the frame is not the "Start Page" frame, then create the menubar
+    # if frame != frames["Start Page"]:
+    # The menubar now has options for File, Manage, and Settings
+    menubar = Menu(app)
+    app.config(menu=menubar)
+
+    create_menu = Menu(menubar, tearoff=0)
+    create_menu.add_command(
+        label="New file", command=lambda: show_frame(frames["Delays Creator"])
+    )
+    create_menu.add_command(
+        label="New folder", command=lambda: show_frame(frames["Folders Creator"])
+    )
+    create_menu.add_separator()
+    create_menu.add_command(label="Exit", command=app.quit)
+    menubar.add_cascade(label="File", menu=create_menu)
+
+    edit_menu = Menu(menubar, tearoff=0)
+    menubar.add_command(
+        label="Edit", command=lambda: show_frame(frames["Delays Manager"])
+    )
+
+    settings_menu = Menu(menubar, tearoff=0)
+    menubar.add_cascade(label="Settings", menu=settings_menu)
+    theme_menu = Menu(settings_menu, tearoff=0)
+    settings_menu.add_cascade(label="Appearance", menu=theme_menu)
+
+    for theme in THEMES:
+        theme_menu.add_command(
+            label=theme, command=lambda theme_name=theme: change_theme(theme_name)
+        )
+
+    # transfer_menu.add_command(
+    #     label="Weekly delay sheet", command=transfer_data_to_weekly_delay
+    # )
+    # transfer_menu.add_command(
+    #     label="Weekly cancelled sheet", command=transfer_data_to_weekly_cancelled
+    # )
+    settings_menu.add_separator()
+    settings_menu.add_command(label="Close", command=lambda: None)
+    # else:
+    #     # If it is the "Start page" frame, set an empty menu (remove the menubar)
+    #     app.config(menu=Menu(app))
+    #
 
 
-def clock():
-    time = datetime.now()
-    hour = time.strftime(" %H:%M ")
-    weekday = time.strftime("%A")
-    day = time.day
-    month = time.strftime("%m")
-    year = time.strftime("%Y")
-
-    hour_label.configure(text=hour)
-    hour_label.after(6000, clock)
-
-    day_label.configure(text=weekday + ", " + str(day) + "/" + str(month) + "/" + str(year))
-
-
-def scaler(event):
-    ocs_scale_label.config(text=f'{int(ocs_scale.get())} folders')
-    scada_scale_label.config(text=f'{int(scada_scale.get())} folders')
+def on_closing():
+    # handle any cleanup here
+    app.destroy()
 
 
 def show_context_menu(event):
@@ -1538,84 +1571,46 @@ def show_context_menu(event):
         context_menu.post(event.x_root, event.y_root)
 
 
-def edit_username():
-    # Get the current username
-    current_username = username_var.get()
-
-    # Ask the user for a new username using a simple dialog
-    new_username = simpledialog.askstring(parent=tab1, title="Edit Username", prompt="Enter new username:",
-                                          initialvalue=current_username)
-
-    # If the user provides a new username (i.e., didn't cancel the dialog), update the username_var
-    if new_username is not None:
-        username_var.set(new_username)
-
-
-# def update_start_button(*args):
-#     content = username_var.get()
-#     if content and not any(char.isdigit() for char in content):
-#         login_button.state(['!disabled'])
-#         username_entry.configure(bootstyle="TEntry.secondary")
-#     else:
-#         login_button.state(['disabled'])  # Disable button if there's no content
-#         username_entry.configure(bootstyle="TEntry.danger")
-
-def enable_transfer_button(event):
-    global transfer_button_visible
-
-    if not transfer_button_visible:
-        transfer_button.pack(side=RIGHT, padx=10, pady=10)
-        transfer_button_visible = True
-    else:
-        transfer_button.pack_forget()
-        transfer_button_visible = False
-
-
-def show_notebook(frame_name):
-    if construction_wp_var.get() != "" and username_var.get() != "":
-        show_frame(frame_name)
-    else:
-        messagebox.showerror(title="Error", message="Please fill your name and the construction work plan")
-
-
-# ========================= Root config =========================
-pyglet.font.add_file('digital-7/digital-7.ttf')
+# Root config
+# app = ttk.Window(
+#     themename="cosmo", size=(768, 522), resizable=(0, 0), title="Smart CIIM"
+# )
 
 app = Tk()
-windll.shcore.SetProcessDpiAwareness(1)
 app.resizable(0, 0)
 app.title("Smart CIIM")
 
-# Grid
-app.grid_columnconfigure(0, weight=1)
-app.grid_rowconfigure(0, weight=1)
 # Geometry
 app_width = 750
-app_height = 520
+app_height = 550
 screen_width = app.winfo_screenwidth()
 screen_height = app.winfo_screenheight()
 x = (screen_width / 2) - (app_width / 2)
 y = (screen_height / 2) - app_height
+
 app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 
-# ============================ Style ============================
-style = Style(theme="cosmo")
+style = Style()
 
-style.configure("TButton", font=("Roboto", 9, "bold"))
-style.configure("Clock.TLabel", font="digital-7 80")
+# Define a custom light style for Labelframe
+style.configure("light.TLabelframe")  # add any other styling properties
 
-# defaultFont = nametofont("TkDefaultFont")
-# defaultFont.configure(size=9)
+# Define a custom dark style for Labelframe
+style.configure("dark.TLabelframe")  # add any other styling properties
 
-# =========================== Variables ===========================
-username_var = StringVar()
+# Define a custom style for Button and make it rounded
+style.configure("StartStyle.TButton", font=("Sans serif", 10))
+
+app.rowconfigure(0, weight=1)
+app.columnconfigure(0, weight=1)
+
+# Variables
 username = ""
 current_frame = None
 # Paths
 CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
 construction_wp_path = Path("/")
-construction_wp_var = StringVar()
 delay_report_path = Path("/")
 selected_date = ""
 # Tkinter variables
@@ -1640,17 +1635,15 @@ DELAY_TEMPLATE = "Delay Report template v.02.xlsx"
 DAILY_REPORT_TEMPLATE = "CIIM Report Table v.1.xlsx"
 # Themes
 tl_names_dict = {}
-theme_var = StringVar()
-theme_var.set("cosmo")
 THEMES = [
     "cosmo",
     "journal",
     "minty",
-    "sandstone",
+    "cerculean",
     "yeti",
     "superhero",
     "darkly",
-
+    "cyborg",
 ]
 # Those TLs won't appear in the Listbox that creates delays
 TL_BLACKLIST = [
@@ -1663,7 +1656,6 @@ TL_BLACKLIST = [
     "Rami Arami",
 ]
 
-# ============================ Mappings ============================
 TO_DAILY_REPORT_MAPPINGS = {
     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS/Old Bridges/TS/Scada]",
     "WW [Nº]": "WW [Nº]",
@@ -1749,304 +1741,215 @@ WORKER_ENTRIES = [
     "w7_entry",
     "w8_entry",
 ]
-
-# =========================== Frames ===========================
+# Frames
 frames = {
-    "Login": ttk.Frame(master=app),
-    "Notebook": ttk.Frame(master=app),
-    "Phones": ttk.Frame(master=app)
-
+    "Start Page": ttk.Frame(app),
+    "Delays Creator": ttk.Frame(app),
+    "Folders Creator": ttk.Frame(app),
+    "Delays Manager": ttk.Frame(app),
 }
 
-# ====================== Login Frame ======================
-# ================== Background Image ===================
-login_frame = frames["Login"]
-bg = ImageTk.PhotoImage(file='images/Please enter name.png')
-login_button_img = ImageTk.PhotoImage(file='images/Screenshot 2023-11-03 at 11.39.57 250.png')
+frame_configs = {
+    "Delays Creator": {"columns": [(0, 1), (1, 5)], "rows": [(0, 1), (1, 8)]},
+    "Folders Creator": {"columns": [(0, 1), (1, 5)], "rows": [(0, 1), (1, 9)]},
+    "Delays Manager": {"columns": [(1, 1)], "rows": [(0, 1), (1, 8)]},
+}
 
-# Show image
-label1 = Label(master=login_frame, image=bg)
-label1.place(x=0, y=0)
+# Adjust the frame configurations
+for frame_name, config in frame_configs.items():
+    frame = frames[frame_name]
 
-username_entry = ttk.Entry(master=login_frame, textvariable=username_var, width=50, font=("Roboto", 11, "bold"),
-                           style="light")
-username_entry.place(x=210, y=170)
+    for col, weight in config["columns"]:
+        frame.columnconfigure(col, weight=weight)
 
-path_entry = ttk.Entry(master=login_frame, textvariable=construction_wp_var,
-                       width=50, font=("Roboto", 11, "bold"), style="light")
-path_entry.place(x=210, y=308)
-path_entry.bind('<Button-1>', open_const_wp)
-username_entry.bind('<Tab>', open_const_wp)
+    for row, weight in config["rows"]:
+        frame.rowconfigure(row, weight=weight)
 
-login_button = ttk.Button(
-    master=login_frame,
-    command=lambda: show_notebook("Notebook"),
-    image=login_button_img, style="light"
-
+# Start page
+welcome_label = ttk.Label(
+    frames["Start Page"], text="Welcome to Smart CIIM!", font=("Helvetica", 26, "bold")
 )
-login_button.place(x=240, y=380)
+welcome_label.pack(pady=100)
 
-# ====================== Notebook Config ======================
-my_notebook = ttk.Notebook(master=frames["Notebook"])
-my_notebook.pack(fill="both", expand=True)
+start_button = ttk.Button(
+    frames["Start Page"],
+    text="Get Started",
+    command=open_const_wp,
+    width=20,
+    style="StartStyle.TButton",
+)
+start_button.pack(pady=20)
+show_frame(frames["Start Page"])
 
-tab1 = ttk.Frame(master=my_notebook)
-tab2 = ttk.Frame(master=my_notebook)
-tab3 = ttk.Frame(master=my_notebook)
-tab4 = ttk.Frame(master=my_notebook)
-
-my_notebook.add(child=tab1, text="Home")
-my_notebook.add(child=tab2, text="   File  ")
-my_notebook.add(child=tab3, text="Folder")
-my_notebook.add(child=tab4, text="  Edit  ")
-
-# ====================== Tab 1 - Home ======================
-
-# tab1.grid_columnconfigure(0, weight=1)
-# tab1.grid_rowconfigure(0, weight=1)
-
-tab1.columnconfigure(0, weight=1)
-tab1.columnconfigure(1, weight=0)
-tab1.rowconfigure(0, weight=0)
-tab1.rowconfigure(1, weight=1)
-tab1.rowconfigure(2, weight=1)
-
-time_frame = ttk.Frame(master=tab1)
-time_frame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-
-# Then, packing the user-related labels at the bottom
-active_user_label = ttk.Label(time_frame, text="Active user:")
-active_user_label.pack(anchor='nw', side="left")  # South-west/bottom-left alignment
-
-display_username = ttk.Label(time_frame, textvariable=username_var, bootstyle="info", font=("Roboto", 9, "bold"))
-display_username.pack(anchor='nw', side="left")  # South-west/bottom-left alignment
-display_username.bind("<Button-1>", lambda e: edit_username())
-
-# Packing the hour and day labels at the top first
-hour_label = ttk.Label(master=time_frame, text="12:49:05", style="Clock.TLabel")
-hour_label.pack(anchor='center')  # North/top alignment
-
-day_label = ttk.Label(master=time_frame, text="Saturday 22/01/2023", font=("Verdana", 16), style="secondary",
-                      anchor="n")
-day_label.pack(anchor='n', padx=5, pady=5)  # North/top alignment
-
-path_frame = ttk.Frame(master=tab1)
-path_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-
-home_browse_button = ttk.Button(master=path_frame, text="Change file", command=select_const_wp, bootstyle="secondary")
-home_browse_button.pack(side="left")
-
-path_entry = ttk.Entry(master=path_frame, textvariable=construction_wp_var, width=50)
-path_entry.pack(side="left")
-
-themes_frame = ttk.Labelframe(master=tab1, text="Themes")
-themes_frame.grid(row=0, column=999, rowspan=999, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
-
-# Create the radio buttons within the themes_frame
-for theme_name in THEMES:
-    ttk.Radiobutton(
-        master=themes_frame,
-        text=theme_name.capitalize(),
-        value=theme_name,
-        variable=theme_var,
-        command=change_theme,
-        bootstyle="toolbutton"
-
-    ).pack(fill="x", padx=5, pady=2, expand=True)
-
-phones_button = ttk.Button(master=themes_frame, text="Phone numbers", command=lambda: show_frame("Phones"),
-                           bootstyle="link.success")
-phones_button.pack(fill="x", padx=5, pady=2, expand=True)
-
-# ====================== Tab 1 - Home ======================
-# ====================== Phones frame ======================
-phones_frame = frames["Phones"]
-phones_frame.rowconfigure(1, weight=1)
-phones_frame.rowconfigure(2, weight=0)
-# phones_frame.columnconfigure(0, weight=1)
-# phones_frame.grid_columnconfigure(1, weight=0)
-phones_frame.columnconfigure(0, weight=1)
-phones_frame.columnconfigure(3, weight=1)
-phones_frame.columnconfigure(5, weight=1)
-
-phones_df = pd.read_csv('names.csv')
-
-team_leader_phones = phones_df["Team Leader Name"]
-foreman_phones = phones_df['Foreman Name']
-
-# Convert the series to a single string with line breaks, excluding NaN values.
-tl_phones_str = "\n".join(team_leader_phones.dropna().astype(str))
-foreman_phones_str = "\n".join(foreman_phones.dropna().astype(str))
-
-# Team Leader names on the left side
-tl_label = ttk.Label(master=phones_frame, text="Team Leaders", font=("Verdana", 12,), anchor="center")
-tl_label.grid(row=0, column=1, columnspan=2, padx=5, pady=10)
-
-tl_phones_list = ttk.Text(master=phones_frame, wrap="none", spacing1=7, width=40)
-tl_phones_list.grid(row=1, column=1, pady=10)
-tl_phones_list.insert("end", tl_phones_str)
-tl_phones_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=tl_phones_list.yview)
-tl_phones_scroll.grid(row=1, column=2, pady=5, sticky="nsw")
-tl_phones_list.config(yscrollcommand=tl_phones_scroll.set)
-
-# Foreman names on the right side
-foreman_label = ttk.Label(master=phones_frame, text="Foremen", font=("Verdana", 12,), anchor="center")
-foreman_label.grid(row=0, column=4, padx=5, pady=10, sticky="nsew")
-foreman_list = ttk.Text(master=phones_frame, wrap="none", spacing1=7, width=40)
-foreman_list.grid(row=1, column=4, pady=10)
-foreman_list.insert("end", foreman_phones_str)
-foreman_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=foreman_list.yview)
-foreman_scroll.grid(row=1, column=5, pady=5, sticky="nsw")
-foreman_list.config(yscrollcommand=foreman_scroll.set)
-
-phone_back_button = ttk.Button(master=phones_frame, text="Back", command=lambda: show_frame("Notebook"), width=10)
-phone_back_button.grid(row=2, columnspan=6, padx=5, pady=20)
-
-# ====================== Tab 2 - File ======================
-files_empty_label = ttk.Label(master=tab2)
-files_empty_label.grid(row=0, column=0, padx=110, pady=5, sticky="nsew")  # empty label
-
-dc_select_date_label = ttk.Label(master=tab2, text="   Select date:  ", )
-dc_select_date_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-dates_combobox = ttk.Combobox(master=tab2, values=cp_dates, postcommand=update_combo_list)
+# Menu 1 - Create Delays
+# Frame 1 - Date select
+menu1_frame1 = ttk.LabelFrame(
+    frames["Delays Creator"], text="Date Select", style="light"
+)
+menu1_frame1.grid(row=0, column=0, sticky="wens", padx=5, pady=5)
+dc_select_date_label = ttk.Label(menu1_frame1, text="   Select date:  ")
+dc_select_date_label.pack(side="left")
+dates_combobox = ttk.Combobox(
+    menu1_frame1, values=cp_dates, postcommand=update_combo_list, style="danger"
+)
 dates_combobox.set("Date")
 dates_combobox.bind("<<ComboboxSelected>>", dc_combo_selected)
-dates_combobox.grid(row=1, column=2, padx=5, pady=5, sticky="w")
-dc_tl_listbox = Listbox(master=tab2, border=5, selectmode=ttk.EXTENDED, height=20, width=40)
-dc_tl_listbox.bind("<Return>", dc_on_listbox_create)
-dc_tl_listbox.grid(row=2, column=1, columnspan=2, pady=20)
-scrollbar = ttk.Scrollbar(master=tab2, style="round")
-scrollbar.grid(row=2, column=3, columnspan=2, pady=20, sticky="nsew")
-dc_create_button = ttk.Button(master=tab2, text="Create", command=dc_on_listbox_create)
-dc_create_button.grid(row=3, column=1, padx=10, sticky="nsew", columnspan=2)
+dates_combobox.pack(side="left")
 
-# ====================== Tab 3 - Folder ======================
-tab3.rowconfigure(2, weight=1)
-tab3.columnconfigure(2, weight=1)
+# Frame 2 - TLs Listbox
+menu1_frame2 = ttk.LabelFrame(
+    frames["Delays Creator"], text="Team Leaders", style="light"
+)
+menu1_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+dc_tl_listbox = Listbox(menu1_frame2, border=5, selectmode=ttk.EXTENDED)
+dc_tl_listbox.pack(fill="both", expand=True)
+dc_tl_listbox.bind("<Return>", dc_on_listbox_double_click)
+dc_create_button = ttk.Button(
+    menu1_frame2, text="Create", command=dc_on_listbox_double_click, width=20
+)
+dc_create_button.pack(side="bottom", pady=5)
 
-folders_empty_label = ttk.Label(master=tab3)
-folders_empty_label.grid(row=0, column=0, padx=97, pady=5, sticky="nsew")  # empty label
-select_folder_label = ttk.Label(master=tab3, text="   Select date:  ")
-select_folder_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-calendar_button = ttk.Button(master=tab3, text="Browse", command=pick_date, width=25, style="danger.Outline")
-calendar_button.grid(row=1, column=2, padx=5, pady=5, sticky="w")
+# Menu 2 - Create Folders
+# Frame 1 - Calendar
+menu2_frame1 = ttk.LabelFrame(frames["Folders Creator"], style="light")
+menu2_frame1.grid(row=0, column=0, sticky="wens", padx=5, pady=5)
+select_folder_label = ttk.Label(menu2_frame1, text="   Select date:  ")
+select_folder_label.pack(side="left")
+calendar_button = ttk.Button(
+    menu2_frame1, text="Browse", command=pick_date, width=25, style="Outline"
+)
+calendar_button.pack(side="left")
 
-discipline_frame = ttk.Frame(master=tab3)
-discipline_frame.grid(row=2, column=1, sticky="nsew", columnspan=2, pady=80)
-fc_ocs_label = ttk.Label(master=discipline_frame, text="OCS")
-fc_ocs_label.grid(row=1, column=1, sticky="se", padx=5, pady=30, )
-fc_scada_label = ttk.Label(master=discipline_frame, text="SCADA")
-fc_scada_label.grid(row=2, column=1, sticky="e", padx=5, pady=5)
-create_button = ttk.Button(master=discipline_frame, text="Create", command=create_folders, state="disabled", width=25)
-create_button.grid(row=3, column=2, pady=50)
-ocs_scale = Scale(master=discipline_frame, length=200, from_=0, to=50, command=scaler, state="disabled",
-                  orient="horizontal")
-ocs_scale.grid(row=1, column=2, sticky="w", padx=5, )
-ocs_scale_label = ttk.Label(master=discipline_frame)
-ocs_scale_label.grid(row=1, column=3, sticky="w", padx=5, )
-scada_scale = Scale(master=discipline_frame, length=200, from_=0, to=50, command=scaler, state="disabled",
-                    orient="horizontal")
-scada_scale.grid(row=2, column=2, sticky="w", padx=5)
-scada_scale_label = ttk.Label(master=discipline_frame)
-scada_scale_label.grid(row=2, column=3, sticky="w", padx=5)
+# Frame 2- OCS AND SCADA WORKS
+menu2_frame2 = ttk.LabelFrame(frames["Folders Creator"], text="Discipline")
+menu2_frame2.grid(row=1, column=0, sticky="wens", padx=5, pady=5)
+ttk.Label(menu2_frame2, text="OCS works:").grid(
+    row=1, column=1, sticky="e", padx=20, pady=20
+)
+fc_ocs_entry = ttk.Entry(menu2_frame2, width=8)
+fc_ocs_entry.grid(row=1, column=2, sticky="w", padx=10)
+fc_ocs_entry.config(state="disabled")
 
-# ====================== Tab 4 - Edit ======================
-# tab4.rowconfigure(0, weight=1)
-tab4.rowconfigure(1, weight=8)
+ttk.Label(menu2_frame2, text="SCADA works:").grid(
+    row=2, column=1, sticky="e", padx=20, pady=30
+)
+fc_scada_entry = ttk.Entry(menu2_frame2, width=8)
+fc_scada_entry.grid(row=2, column=2, sticky="w", padx=10)
+fc_scada_entry.config(state="disabled")
 
-tab4.columnconfigure(1, weight=1)
-# Date Select
-menu3_frame1 = ttk.Frame(master=tab4)
-menu3_frame1.grid(row=0, column=0, sticky="wes", padx=5, pady=5)
+create_button = ttk.Button(
+    menu2_frame2, text="Create", command=create_folders, width=8, state="disabled"
+)
+create_button.grid(row=4, column=2, sticky="es", pady=10)
+
+# Menu 3 - Delays Manager
+# Frame 1 - Date Select
+menu3_frame1 = ttk.LabelFrame(frames["Delays Manager"], text="", style="light")
+menu3_frame1.grid(row=0, column=0, sticky="wens", padx=5, pady=5)
 dc_select_date_label = ttk.Label(menu3_frame1, text="   Select date:  ")
 dc_select_date_label.pack(side="left")
-dm_dates_combobox = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, bootstyle="danger")
+dm_dates_combobox = ttk.Combobox(
+    menu3_frame1, values=cp_dates, postcommand=update_combo_list, style="danger"
+)
 dm_dates_combobox.set("Date")
 dm_dates_combobox.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_combobox.pack(side="left")
 
-# Team Leaders Listbox
-menu3_frame2 = ttk.Frame(master=tab4)
+# Frame 2 - Team Leaders Listbox
+menu3_frame2 = ttk.LabelFrame(
+    frames["Delays Manager"], text="Team Leaders", style="light"
+)
 menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
-dm_tl_listbox = Listbox(menu3_frame2, border=5)
+dm_tl_listbox = Listbox(
+    menu3_frame2,
+    border=5,
+)
 
-dm_tl_listbox.pack(fill="both", expand=True)
-dm_tl_listbox.bind("<Double-1>", dm_on_tl_listbox_2_click)
+dm_tl_listbox.pack(
+    fill="both",
+    expand=True,
+)
+dm_tl_listbox.bind("<Double-1>", on_tl_listbox_left_double_click)
 # Create a context menu
-context_menu = Menu(master=app, tearoff=0)
-context_menu.add_command(label="Rename", command=lambda: dm_on_tl_listbox_rename(None))
-context_menu.add_command(label="Delete", command=lambda: dm_on_tl_listbox_delete(None))
+context_menu = Menu(app, tearoff=0)
+context_menu.add_command(label="Rename", command=lambda: on_tl_listbox_rename(None))
+context_menu.add_command(label="Delete", command=lambda: on_tl_listbox_delete(None))
 # Binding the right-click event to show the context menu
 dm_tl_listbox.bind("<Button-3>", show_context_menu)
-dm_tl_listbox.bind("<Delete>", dm_on_tl_listbox_delete)
+dm_tl_listbox.bind("<Delete>", on_tl_listbox_delete)
 
 # Frame 3 - Name + Status
-menu3_frame3 = ttk.LabelFrame(master=tab4, text="Information")
+menu3_frame3 = ttk.LabelFrame(frames["Delays Manager"], text="Status")
 menu3_frame3.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)
-ttk.Label(menu3_frame3, text="Selected: ").grid(row=0, column=0, sticky="e", pady=5, padx=5)
-tl_name_selected = ttk.Label(menu3_frame3, text="None", width=38, bootstyle="info", font=("Roboto", 9, "bold"))
+ttk.Label(menu3_frame3, text="Selected: ").grid(
+    row=0, column=0, sticky="e", pady=5, padx=5
+)
+tl_name_selected = ttk.Label(
+    menu3_frame3, text="None", width=40, font=("Helvetica", 9, "bold")
+)
 tl_name_selected.grid(row=0, column=1, sticky="w")
 ttk.Label(menu3_frame3, text="Status: ").grid(row=0, column=2, sticky="we", pady=5)
-frame3_status = ttk.Label(menu3_frame3, text="Not completed", style="danger", font=("Roboto", 9, "bold"))
+frame3_status = ttk.Label(
+    menu3_frame3,
+    text="Not completed",
+    font=("Helvetica", 9, "bold"),
+    style="danger",
+)
 frame3_status.grid(row=0, column=3, sticky="e", padx=5)
 
 # Frame 4 - Manager
-menu3_frame4 = ttk.Frame(master=tab4)
-menu3_frame4.grid(row=1, column=1, columnspan=2, sticky="nsew", padx=5, pady=5)
-menu3_frame4.columnconfigure(0, weight=1)
+menu3_frame4 = ttk.LabelFrame(frames["Delays Manager"], style="light")
+menu3_frame4.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
+# menu3_frame4.columnconfigure(0, weight=1)
 menu3_frame4.columnconfigure(2, weight=1)
 menu3_frame4.columnconfigure(3, weight=1)
 menu3_frame4.columnconfigure(4, weight=1)
-menu3_frame4.rowconfigure(12, weight=1)
-ttk.Label(menu3_frame4, text="Start time").grid(row=0, column=0,
-                                                sticky="e", padx=15)
+menu3_frame4.columnconfigure(5, weight=1)
+ttk.Label(menu3_frame4, text="Start time:").grid(row=0, column=0, sticky="w", padx=15)
 frame4_stime_entry = ttk.Entry(menu3_frame4)
 frame4_stime_entry.grid(row=0, column=1, sticky="e", pady=2)
 
-ttk.Label(menu3_frame4, text="  End time").grid(row=1, column=0,
-                                                sticky="e", padx=15)
+ttk.Label(menu3_frame4, text="End time:").grid(row=1, column=0, sticky="w", padx=15)
 frame4_endtime_entry = ttk.Entry(menu3_frame4)
 frame4_endtime_entry.grid(row=1, column=1, sticky="e", pady=2)
 
-ttk.Label(menu3_frame4, text="     Reason").grid(
-    row=2, column=0, sticky="e", padx=15, pady=2
+ttk.Label(menu3_frame4, text="Reason:").grid(
+    row=2, column=0, sticky="w", padx=15, pady=2
 )
 frame4_reason_entry = ttk.Entry(menu3_frame4)
 frame4_reason_entry.grid(row=2, column=1, sticky="we", pady=2, columnspan=3)
 
-sep = ttk.Separator(master=menu3_frame4)
-sep.grid(row=3, column=0, columnspan=5, sticky="we", pady=5)
+sep = ttk.Separator(menu3_frame4)
+sep.grid(row=3, column=0, columnspan=5, sticky="we", pady=10)
 
 # Workers
-ttk.Label(menu3_frame4, text="   Workers").grid(row=4, column=0,
-                                                sticky="e",
-                                                padx=15)
+ttk.Label(menu3_frame4, text="Workers:").grid(row=4, column=0, sticky="w", padx=15)
 for i, entry_name in enumerate(WORKER_ENTRIES, start=4):
     globals()[entry_name] = ttk.Entry(menu3_frame4)
     globals()[entry_name].grid(row=i, column=1, sticky="e", pady=2)
 
 # Vehicles
-ttk.Label(menu3_frame4, text="Vehicles").grid(row=4, column=2,
-                                              sticky="e")
+ttk.Label(menu3_frame4, text="Vehicles:").grid(row=4, column=2, sticky="e")
 v1_entry = ttk.Entry(menu3_frame4)
 v1_entry.grid(row=4, column=3, sticky="e")
 
 # Toolbar Frame
-toolbar_frame = ttk.Frame(master=tab4)
-
+toolbar_frame = ttk.Frame(frames["Delays Manager"])
 save_button = ttk.Button(
-    toolbar_frame, text="Save", command=save_delay_wb, state="disabled", bootstyle="", width=10
+    toolbar_frame, text="Save", command=save_delay_wb, style="success", state="disabled"
 )
-save_button.pack(side=RIGHT, padx=10, pady=10)
+save_button.pack(side=RIGHT, fill="both", expand=True)
 
-transfer_button_visible = False
-transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=transfer_combined_data,
-                             width=10, style="warning")
+toolbar_frame.grid(row=999, column=0, sticky="sew", columnspan=2)
 
-# Bind the "End" key press event to enable_transfer_button
-app.bind("<KeyPress-End>", enable_transfer_button)
-
-toolbar_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
+transfer_button = ttk.Button(
+    toolbar_frame,
+    text="Transfer",
+    state="disabled",
+    command=transfer_combined_data,
+    style="ButtonStyle.TButton",
+)
+transfer_button.pack(side=LEFT, fill="both", expand=True)
 
 # transfer_button = ttk.Menubutton(
 #     toolbar_frame,
@@ -2069,12 +1972,5 @@ toolbar_frame.grid(row=2, column=0, columnspan=2, sticky="nsew")
 # # Associate the inside menu with the menubutton
 # transfer_button["menu"] = transfer_menu
 
-# app.protocol("WM_DELETE_WINDOW", on_closing)
-
-
-show_frame("Login")
-clock()
-
+app.protocol("WM_DELETE_WINDOW", on_closing)
 app.mainloop()
-
-# TODO : Make that the user is updated when delay is managed and not created
