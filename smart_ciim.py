@@ -1,3 +1,4 @@
+import os
 import re
 import shutil
 from pathlib import Path
@@ -12,9 +13,10 @@ from datetime import timedelta, datetime
 import time
 from tkinter import simpledialog, messagebox, Menu
 from ttkbootstrap import Style
-from PIL import ImageTk, Image, ImageOps
+from PIL import ImageTk, Image
 from ctypes import windll
 import pyglet
+from ttkbootstrap.tooltip import ToolTip
 
 
 def center_window(window, parent):
@@ -33,9 +35,11 @@ def define_related_paths():
     base_path = CIIM_DIR_PATH
 
     paths = {
-        "delays": base_path / "General Updates" / "Delays+Cancelled works",
-        "passdown": base_path / "Pass Down",
-        "templates": base_path / "Important doc" / "Empty reports (templates)",
+        "delays": base_path / 'General Updates' / 'Delays+Cancelled works',
+        "faults": base_path / 'General Updates' / 'Fault Report Management' / 'Electrification Control Center Fault Report Management 2.0.xlsx',
+        "passdown": base_path / 'Pass Down',
+        "templates": base_path / 'Important doc' / 'Empty reports (templates)',
+        "procedure": base_path / 'Important Doc' / 'Protocols' / 'CIIM procedure test2.0.xlsx',
     }
 
     return paths
@@ -207,6 +211,8 @@ def dc_combo_selected(event):
     construction_wp_workbook.close()
 
     dates_combobox.configure(bootstyle="default")
+    dc_create_button.config(state=NORMAL)
+    dc_create_all_button.config(state=NORMAL)
 
 
 def update_combo_list():
@@ -242,6 +248,17 @@ def create_all_delays():
     Handle the creation of delay reports for all team leaders in the list box.
     """
     global dc_selected_team_leader, tl_num
+
+    if not dc_selected_date:
+        messagebox.showerror("Error", "Select the date and try again")
+        return
+
+    confirm = messagebox.askokcancel(
+        "Confirmation",
+        "Are you sure you want to create delay reports for ALL Team leaders?"
+    )
+    if not confirm:
+        return
 
     # Get all the names from the listbox
     all_names = dc_tl_listbox.get(0, END)
@@ -281,6 +298,11 @@ def dc_on_listbox_create():
     Handle the event of a double click on the list box of team leaders.
     """
     global dc_selected_team_leader, tl_num
+
+    if not dc_selected_date:
+        messagebox.showerror("Error", "Select the date and try again")
+        return
+
     dc_listbox_selection_indices = dc_tl_listbox.curselection()
 
     progress_win, progress_bar, progress_label = initialize_progress_bar_window("Creating Delay Reports...",
@@ -614,7 +636,6 @@ def dm_combo_selected(event):
 
     # Set configurations
     set_config(save_button, state="normal")
-    dm_dates_combobox.configure(bootstyle="default")
 
 
 def get_selected_item_from_listbox():
@@ -960,6 +981,7 @@ def transfer_data(source_file, destination_file, mappings, dest_start_row=4, des
 
     # Print all headers from the source file
     print("Source headers:", [cell.value for cell in src_ws[3]])
+    print("Destination headers:", [cell.value for cell in dest_ws[3]])
 
     dest_row_counter = dest_start_row
     observation_col = src_header.get("Observations", None)
@@ -967,16 +989,17 @@ def transfer_data(source_file, destination_file, mappings, dest_start_row=4, des
     transferred_rows = 0
     for row_num, row in enumerate(src_ws.iter_rows(min_row=4, values_only=True), 4):
         if observation_col:
+
+            # Check if the row is blank by looking at certain key columns
+            key_column_indexes = [src_header['T.P Start [Time]'] - 1,
+                                  src_header['Team Leader\nName (Phone)'] - 1]
+            if all(not row[idx] for idx in key_column_indexes):
+                continue  # Skip the row as it is considered blank
+
             observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
-            if observation_value and "cancel" not in observation_value.lower():
+            if not observation_value or "cancel" not in observation_value.lower():
                 print(f"Skipping row {row_num} due to observation value: {observation_value}")
                 continue
-
-        # Check if the row is blank by looking at certain key columns
-        key_column_indexes = [src_header['T.P Start [Time]'] - 1,
-                              src_header['Team Leader\nName (Phone)'] - 1]
-        if all(not row[idx] for idx in key_column_indexes):
-            continue  # Skip the row as it is considered blank
 
         for src_col, dest_col in mappings.items():
             if isinstance(src_col, tuple) and src_col == (
@@ -1024,6 +1047,7 @@ def transfer_data(source_file, destination_file, mappings, dest_start_row=4, des
         transferred_rows += 1
 
     dest_wb.save(destination_file)
+    dest_wb.close()
     src_wb.close()
 
     return transferred_rows
@@ -1059,7 +1083,7 @@ def transfer_combined_data():
             # Transfer for cancelled
             if cancelled_int is not None:
                 cancelled_transferred = transfer_data(
-                    construction_wp_path,
+                    daily_report_path,
                     weekly_delay_path,
                     TO_WEEKLY_CANCELLED_MAPPING,
                     cancelled_int,
@@ -1463,8 +1487,9 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
     report_filename = derive_report_name(formatted_target_date)
     target_report_path = Path(target_directory / report_filename)
 
-    usecols_value = list(mappings.values())
+    usecols_value = [mappings[header] for header in mappings.keys()]
     df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
+    print(df.columns)
 
     df["Date [DD/MM/YY]"] = pd.to_datetime(
         df["Date [DD/MM/YY]"], format="%d/%m/%Y", dayfirst=True, errors="coerce"
@@ -1475,14 +1500,27 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
     target_workbook = load_workbook(filename=target_report_path)
     target_worksheet = target_workbook.active
 
-    col_mapping = {k: (list(mappings.keys()).index(k) + 2) for k in mappings.keys()}
+    try:
 
-    for row_idx, (_, row_data) in enumerate(target_df.iterrows(), start=start_row):
-        for header, col_idx in col_mapping.items():
-            target_worksheet.cell(row=row_idx, column=col_idx, value=row_data[mappings[header]])
+        # Write headers (using the mappings keys as headers)
+        for col, header in enumerate(mappings.keys(), 2):  # Starting from column B
+            target_worksheet.cell(row=start_row - 1, column=col, value=header)
 
-    target_workbook.save(target_report_path)
-    print(f"Report for {formatted_target_date} has been updated and saved.")
+        # Write data
+        for row_idx, (index, row_data) in enumerate(target_df.iterrows(), start=start_row):
+            for col_idx, header in enumerate(mappings.keys(), 2):  # Starting from column B
+                target_worksheet.cell(row=row_idx, column=col_idx, value=row_data[header])
+
+        # Change the value of cell O3 to "Work Description"
+        target_worksheet['O3'] = "Work Description"
+
+        target_workbook.save(target_report_path)
+        print(f"Report for {formatted_target_date} has been updated and saved.")
+
+    except ValueError as e:
+        messagebox.showerror("Error", f"Failed to read Excel file: {e}")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
 
 def write_data_to_report(src_path, target_date, target_directory, mappings):
@@ -1534,7 +1572,10 @@ def change_theme():
     style.theme_use(current_theme)  # Set the theme
     style.configure("TButton", font=("Roboto", 9, "bold"))
     style.configure("TMenubutton", font=("Roboto", 9, "bold"))
+    style.configure("success.Link.TButton", font=("Roboto", 9, "bold"), anchor=W)
     print(current_theme)
+
+    update_icons(current_theme)
 
 
 def show_frame(frame_name):
@@ -1545,6 +1586,30 @@ def show_frame(frame_name):
         if name == frame_name:
             frame.pack(fill="both", expand=True)
             current_frame = frame_name
+
+
+def load_icon(icon_path):
+    # Load the icon image
+    img = Image.open(icon_path)
+
+    # Convert the image to a format that Tkinter can use
+    tk_img = ImageTk.PhotoImage(img)
+    return tk_img
+
+
+def update_icons(theme):
+    # Update the icons based on the theme
+    icon_set = 'light' if is_dark_theme(theme) else 'dark'
+
+    # Keep a reference to the icons in a global scope
+    global photo_images
+    photo_images = {}
+
+    # Iterate over the notebook's tabs
+    for tab_name, frame in {'Home': tab1, 'File': tab2, 'Folder': tab3, 'Edit': tab4}.items():
+        icon_path = notebook_tabs[tab_name][icon_set]
+        photo_images[tab_name] = load_icon(icon_path)  # Assuming load_icon returns an ImageTk.PhotoImage
+        my_notebook.tab(frame, image=photo_images[tab_name])
 
 
 def clock():
@@ -1623,10 +1688,126 @@ def update_edit_frame_based_on_tab_change(event):
                 frame4_reason_entry.config(style="default.TCombobox")
 
 
+def display_dist_list():
+    show_frame("Dist list")
+
+    paths = define_related_paths()
+    proc_path = paths["procedure"]
+
+    if proc_path.exists():
+        try:
+            # Read the Excel file into a pandas DataFrame
+            df = pd.read_excel(proc_path, sheet_name='Dist. List', usecols='A:D')
+            df.fillna('', inplace=True)
+
+            # Iterate over the DataFrame and the text widgets at the same time
+            for col, text_widget in zip(df.columns, text_widgets):
+                # Clear the text widget first
+                text_widget.delete('1.0', END)
+                # Insert the data into the text widget
+                column_data = '\n'.join(df[col].astype(str))
+                text_widget.insert('1.0', column_data)
+                # Highlight lines containing "cc" after inserting the text
+                highlight_lines_containing_cc(text_widget)
+
+        except ValueError as e:
+            messagebox.showerror("Error", f"Failed to read Excel file: {e}")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+
+def display_phone_list():
+    show_frame("Phones")
+
+    # Ideally, you should also handle potential errors here, such as the file not existing.
+    phones_df = pd.read_csv('names.csv')
+
+    team_leader_phones = phones_df["Team Leader Name"]
+    foreman_phones = phones_df['Foreman Name']
+
+    # Convert the series to a single string with line breaks, excluding NaN values.
+    tl_phones_str = "\n".join(team_leader_phones.dropna().astype(str))
+    foreman_phones_str = "\n".join(foreman_phones.dropna().astype(str))
+
+    # Update the contents of the Text widgets.
+    tl_phones_list.delete("1.0", "end")
+    tl_phones_list.insert("end", tl_phones_str)
+
+    foreman_list.delete("1.0", "end")
+    foreman_list.insert("end", foreman_phones_str)
+
+
+def copy_to_clipboard(event, text_widget):
+    try:
+        # Get the current line index
+        current_index = text_widget.index(CURRENT)
+        line = current_index.split('.')[0]
+        # Extract the line's content
+        line_text = text_widget.get(f"{line}.0", f"{line}.end")
+        # Clear the clipboard and append new content
+        phones_frame.clipboard_clear()
+        phones_frame.clipboard_append(line_text.strip())
+        # Optionally, show a message that the content was copied
+        messagebox.showinfo("Info", f"Copied to clipboard: {line_text.strip()}")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
+
+
+def open_precedure_file():
+    paths = define_related_paths()
+    proc_path = paths["procedure"]
+    os.startfile(proc_path)
+
+
+def open_wp_file():
+    global construction_wp_path
+    os.startfile(construction_wp_path)
+
+
+def open_faults():
+    paths = define_related_paths()
+    faults_path = paths["faults"]
+    os.startfile(faults_path)
+
+
+def open_passdown():
+    paths = define_related_paths()
+    passdown_path = paths["passdown"]
+
+    files = sorted(passdown_path.glob("*.xlsx"), key=os.path.getmtime, reverse=True)
+    filename = files[0]
+
+    print(f"Latest passdown : {filename.stem}")
+
+    os.startfile(filename)
+
+
+def highlight_lines_containing_cc(text_widget):
+    # Define a tag with a yellow background
+    text_widget.tag_configure("highlight", background="yellow")
+
+    # Start from the beginning of the Text widget
+    start_index = '1.0'
+    while True:
+        # Search for the occurrence of "cc"
+        start_index = text_widget.search("cc", start_index, END, nocase=True)
+        if not start_index:
+            break
+
+        # Find the end of the line where "cc" was found
+        end_index = f"{start_index} lineend"
+
+        # Add the highlight tag to the line
+        text_widget.tag_add("highlight", start_index, end_index)
+
+        # Move to the next character after the end index, to continue searching
+        start_index = f"{end_index}+1c"
+
+
 # ========================= Root config =========================
 pyglet.font.add_file('digital-7/digital-7.ttf')
 
-app = ttk.Window(themename="cosmo")
+app = ttk.Window()
 windll.shcore.SetProcessDpiAwareness(1)
 app.resizable(0, 0)
 app.title("Smart CIIM")
@@ -1643,17 +1824,20 @@ x = (screen_width / 2) - (app_width / 2)
 y = (screen_height / 2) - app_height
 app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 
+# app.iconbitmap(bitmap='images/snake.ico')
+# app.iconbitmap(default='images/snake.ico')
 # ============================ Style ============================
 style = Style()
-
-style.configure("TButton", font=("Roboto", 9, "bold"))
+style.configure("TButton", font=("Roboto", 9, "bold"), )
+style.configure("success.Link.TButton", font=("Roboto", 9, "bold"), anchor=W)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
 
 # =========================== Variables ===========================
 username_var = StringVar()
 username = ""
 current_frame = None
-
+# A global variable to keep track of whether the text widgets have been created
+text_widgets_created = False
 # Paths
 CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
@@ -1705,28 +1889,54 @@ delay_reasons = ["Delay due to no TP",
                  "Delay due to real hours are different for the 612",
                  "--Other--"
                  ]
-
 # ============================ Mappings ============================
+CONSTRUCTION_WP_HEADERS = [
+    "Discipline [OCS/Old Bridges/TS/Scada]",
+    "WW [Nº]",
+    "Date [DD/MM/YY]",
+    "T.P Start [Time]",
+    "T.P End [Time]",
+    "T.P Start [K.P]",
+    "T.P End [K.P]",
+    "EP",
+    "ISR Start Section [Name]",
+    "ISR  End Section [Name]",
+    "Foremen [Israel]",
+    "Team Name",
+    "Team Leader\nName (Phone)",
+    "Work Description (Baseline)",
+    "ISR Safety Request",
+    "ISR Comm&Rail:",
+    "ISR T.P request (All/Track number)",
+    "Observations"
+]
+HEADER_TO_INDEX = {header: index for index, header in enumerate(CONSTRUCTION_WP_HEADERS)}
+# All the Headers from the Construction Work Plan match the CIIM Report Table
 TO_DAILY_REPORT_MAPPINGS = {
-    "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS/Old Bridges/TS/Scada]",
-    "WW [Nº]": "WW [Nº]",
-    "Date [DD/MM/YY]": "Date [DD/MM/YY]",
-    "T.P Start [Time]": "T.P Start [Time]",
-    "T.P End [Time]": "T.P End [Time]",
-    "T.P Start [K.P]": "T.P Start [K.P]",
-    "T.P End [K.P]": "T.P End [K.P]",
-    "ISR Start Section [Name]": "ISR Start Section [Name]",
-    "ISR  End Section [Name]": "ISR  End Section [Name]",
-    "EP": "EP",
-    "Foremen [Israel]": "Foremen [Israel]",
-    "Team Name": "Team Name",
-    "Team Leader\nName (Phone)": "Team Leader\nName (Phone)",
-    "Work Description (Baseline)": "Work Description",
-    "ISR Safety Request": "ISR Safety Request",
-    "ISR Comm&Rail:": "ISR Comm&Rail:",
-    "ISR T.P request (All/Track number)": "ISR T.P request (All/Track number)",
-    "Observations": "Observations",
-}
+    header: header for header in CONSTRUCTION_WP_HEADERS}
+
+#
+#
+# TO_DAILY_REPORT_MAPPINGS = {
+#     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS/Old Bridges/TS/Scada]",
+#     "WW [Nº]": "WW [Nº]",
+#     "Date [DD/MM/YY]": "Date [DD/MM/YY]",
+#     "T.P Start [Time]": "T.P Start [Time]",
+#     "T.P End [Time]": "T.P End [Time]",
+#     "T.P Start [K.P]": "T.P Start [K.P]",
+#     "T.P End [K.P]": "T.P End [K.P]",
+#     "ISR Start Section [Name]": "ISR Start Section [Name]",
+#     "ISR  End Section [Name]": "ISR  End Section [Name]",
+#     "EP": "EP",
+#     "Foremen [Israel]": "Foremen [Israel]",
+#     "Team Name": "Team Name",
+#     "Team Leader\nName (Phone)": "Team Leader\nName (Phone)",
+#     "Work Description (Baseline)": "Work Description",
+#     "ISR Safety Request": "ISR Safety Request",
+#     "ISR Comm&Rail:": "ISR Comm&Rail:",
+#     "ISR T.P request (All/Track number)": "ISR T.P request (All/Track number)",
+#     "Observations": "Observations",
+# }
 
 TO_WEEKLY_DELAY_MAPPINGS = {
     "WW [Nº]": "WW",
@@ -1807,8 +2017,8 @@ WORKER_ENTRIES = [
 frames = {
     "Login": ttk.Frame(master=app),
     "Notebook": ttk.Frame(master=app),
-    "Phones": ttk.Frame(master=app)
-
+    "Phones": ttk.Frame(master=app),
+    "Dist list": ttk.Frame(master=app)
 }
 
 # ====================== Login Frame ======================
@@ -1843,7 +2053,7 @@ login_button.place(x=250, y=380)
 # ====================== Notebook Config ======================
 
 
-my_notebook = ttk.Notebook(master=frames["Notebook"], style='lefttab.TNotebook')
+my_notebook = ttk.Notebook(master=frames["Notebook"])
 my_notebook.pack(fill="both", expand=True)
 
 tab1 = ttk.Frame(master=my_notebook)
@@ -1853,36 +2063,31 @@ tab4 = ttk.Frame(master=my_notebook)
 
 notebook_tabs = {
     'Home': {
-        'light': 'images/icons8-home-24.png',
-        'dark': 'images/icons8-home-24.png'
+        'light': 'images/icons8-home-24(6).png',
+        'dark': 'images/icons8-home-24(5).png'
     },
     'File': {
-        'light': 'images/icons8-file-24(1).png',
-        'dark': 'images/icons8-file-24(1).png'
+        'light': 'images/icons8-file-24(3).png',
+        'dark': 'images/icons8-file-24(2).png'
     },
 
     'Folder': {
-        'light': 'images/icons8-folder-24.png',
-        'dark': 'images/icons8-folder-24.png'
+        'light': 'images/icons8-folder-24(2).png',
+        'dark': 'images/icons8-folder-24(1).png'
     },
     'Edit': {
-        'light': 'images/icons8-edit-24.png',
-        'dark': 'images/icons8-edit-24.png'
+        'light': 'images/icons8-edit-24(2).png',
+        'dark': 'images/icons8-edit-24(1).png'
     }
 }
-
-home_img = ImageTk.PhotoImage(file='images/icons8-home-24.png')
-file_img = ImageTk.PhotoImage(file='images/icons8-file-24(1).png')
-folder_img = ImageTk.PhotoImage(file='images/icons8-folder-24.png')
-edit_img = ImageTk.PhotoImage(file='images/icons8-edit-24.png')
 
 # Dictionary to store the photo images to prevent garbage collection
 photo_images = {}
 
-my_notebook.add(child=tab1, text="Home", image=home_img, compound=LEFT)
-my_notebook.add(child=tab2, text="File", image=file_img, compound=LEFT)
-my_notebook.add(child=tab3, text="Folder", image=folder_img, compound=LEFT)
-my_notebook.add(child=tab4, text="Edit", image=edit_img, compound=LEFT)
+my_notebook.add(child=tab1)
+my_notebook.add(child=tab2)
+my_notebook.add(child=tab3)
+my_notebook.add(child=tab4)
 
 # ====================== Tab 1 - Home ======================
 
@@ -1895,18 +2100,19 @@ tab1.rowconfigure(1, weight=1)
 tab1.rowconfigure(2, weight=1)
 # tab1.rowconfigure(2, weight=1)
 
-time_frame = ttk.Labelframe(master=tab1)
+time_frame = ttk.Frame(master=tab1)
 time_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
 # Then, packing the user-related labels at the bottom
 user_frame = ttk.Frame(master=tab1)
 user_frame.grid(row=0, column=0, pady=5, sticky="nsew")
-active_user_label = ttk.Label(user_frame, text="Active user:")
+active_user_label = ttk.Label(user_frame, text="Active :")
 active_user_label.pack(side=LEFT)
 
 display_username = ttk.Label(user_frame, textvariable=username_var, bootstyle="info", font=("Roboto", 9, "bold"))
 display_username.pack(side=LEFT)
 display_username.bind("<Button-1>", lambda e: edit_username())
+ToolTip(display_username, text='Double-click to rename')
 
 # Packing the hour and day labels at the top first
 hour_label = ttk.Label(master=time_frame, text="12:49", font="digital-7 90")
@@ -1916,122 +2122,181 @@ day_label = ttk.Label(master=time_frame, text="Saturday 22/01/2023", font="digit
 day_label.pack(padx=5, pady=5)  # North/top alignment
 
 path_frame = ttk.Frame(master=tab1)
-path_frame.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
+path_frame.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
 
-home_browse_button = ttk.Button(master=path_frame, text="Change file", command=select_const_wp, bootstyle="secondary")
-home_browse_button.pack(anchor="sw", side="left", pady=5)
+home_browse_button = ttk.Button(master=path_frame, text='Change file', command=select_const_wp, bootstyle='secondary',
+                                width=10)
+home_browse_button.pack(anchor='sw', side='left', pady=5)
 
 path_entry = ttk.Entry(master=path_frame, textvariable=construction_wp_var)
-path_entry.pack(anchor="s", side="left", fill='x', expand=True, pady=5)
+path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
-utilities_frame = ttk.Labelframe(master=tab1, text="Utilities")
-utilities_frame.grid(row=0, column=999, rowspan=999, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
+utilities_frame = ttk.Labelframe(master=tab1, text='Utilities')
+utilities_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
+
+# Utilities
+
+phones_button = ttk.Button(master=utilities_frame, text="Phone numbers", command=lambda: display_phone_list(),
+                           bootstyle='link.success')
+phones_button.pack(fill='x', padx=5, pady=5)
+
+dist_button = ttk.Button(master=utilities_frame, text="Distribution List", command=lambda: display_dist_list(),
+                         style='success.Link.TButton')
+dist_button.pack(fill='x', padx=5, pady=5)
+
+open_proc_button = ttk.Button(master=utilities_frame, text="Open Procedure", command=lambda: open_precedure_file(),
+                              style="success.Link.TButton")
+open_proc_button.pack(fill='x', padx=5, pady=5)
+
+open_wp_button = ttk.Button(master=utilities_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
+                            style="success.Link.TButton")
+open_wp_button.pack(fill='x', padx=5, pady=5)
+open_faults_button = ttk.Button(master=utilities_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
+                                style="success.Link.TButton")
+open_faults_button.pack(fill='x', padx=5, pady=5)
+open_passdown_button = ttk.Button(master=utilities_frame, text="Open Passdown ",
+                                  command=lambda: open_passdown(),
+                                  style="success.Link.TButton")
+open_passdown_button.pack(fill='x', padx=5, pady=5)
 
 theme_button = ttk.Menubutton(utilities_frame, text="Theme")
-theme_button.pack(fill="x", padx=5, pady=2)
+theme_button.pack(fill='x', padx=5, pady=5, side='bottom')
 # Create Transfer menu
 theme_menu = ttk.Menu(theme_button)
 
 for theme_name in style.theme_names():
     theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
 
-# Associate the inside menu with the menubutton
+# Associates the inside menu with the menubutton
 theme_button["menu"] = theme_menu
 
-phones_button = ttk.Button(master=utilities_frame, text="Phone numbers", command=lambda: show_frame("Phones"),
-                           )
-phones_button.pack(fill="x", padx=5, pady=2)
+# ====================== Tab 1 -Phones frame ======================
 
-# ====================== Tab 1 - Home ======================
-# ====================== Phones frame ======================
 phones_frame = frames["Phones"]
 phones_frame.rowconfigure(1, weight=1)
-phones_frame.rowconfigure(2, weight=0)
-# phones_frame.columnconfigure(0, weight=1)
-# phones_frame.grid_columnconfigure(1, weight=0)
 phones_frame.columnconfigure(0, weight=1)
-phones_frame.columnconfigure(3, weight=1)
-phones_frame.columnconfigure(5, weight=1)
-
-phones_df = pd.read_csv('names.csv')
-
-team_leader_phones = phones_df["Team Leader Name"]
-foreman_phones = phones_df['Foreman Name']
-
-# Convert the series to a single string with line breaks, excluding NaN values.
-tl_phones_str = "\n".join(team_leader_phones.dropna().astype(str))
-foreman_phones_str = "\n".join(foreman_phones.dropna().astype(str))
+phones_frame.columnconfigure(2, weight=1)
+# phones_frame.columnconfigure(5, weight=1)
 
 # Team Leader names on the left side
-tl_label = ttk.Label(master=phones_frame, text="Team Leaders", font=("Verdana", 12,), anchor="center")
-tl_label.grid(row=0, column=1, columnspan=2, padx=5, pady=10)
+tl_label = ttk.Label(master=phones_frame, text='Team Leaders', anchor='center', font=('Roboto', 11))
+tl_label.grid(row=0, column=0, columnspan=2, pady=5, sticky='nsew')
 
-tl_phones_list = ttk.Text(master=phones_frame, wrap="none", spacing1=7, width=40)
-tl_phones_list.grid(row=1, column=1, pady=10)
-tl_phones_list.insert("end", tl_phones_str)
-tl_phones_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=tl_phones_list.yview)
-tl_phones_scroll.grid(row=1, column=2, pady=5, sticky="nsw")
+tl_phones_list = ttk.Text(master=phones_frame, wrap='word', spacing1=7)
+tl_phones_list.grid(row=1, column=0, sticky='nsew')
+tl_phones_scroll = ttk.Scrollbar(master=phones_frame, style='round', command=tl_phones_list.yview)
+tl_phones_scroll.grid(row=1, column=1, sticky="nsw")
 tl_phones_list.config(yscrollcommand=tl_phones_scroll.set)
 
 # Foreman names on the right side
-foreman_label = ttk.Label(master=phones_frame, text="Foremen", font=("Verdana", 12,), anchor="center")
-foreman_label.grid(row=0, column=4, padx=5, pady=10, sticky="nsew")
-foreman_list = ttk.Text(master=phones_frame, wrap="none", spacing1=7, width=40)
-foreman_list.grid(row=1, column=4, pady=10)
-foreman_list.insert("end", foreman_phones_str)
-foreman_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=foreman_list.yview)
-foreman_scroll.grid(row=1, column=5, pady=5, sticky="nsw")
+foreman_label = ttk.Label(master=phones_frame, text="Foremen", anchor='center', font=('Roboto', 11))
+foreman_label.grid(row=0, column=2, columnspan=2, padx=5, pady=5, sticky='nsew')
+foreman_list = ttk.Text(master=phones_frame, wrap="word", spacing1=7)
+foreman_list.grid(row=1, column=2, sticky="nsew")
+foreman_scroll = ttk.Scrollbar(master=phones_frame, style='round', command=foreman_list.yview)
+foreman_scroll.grid(row=1, column=3, sticky="nsw")
 foreman_list.config(yscrollcommand=foreman_scroll.set)
+tl_phones_list.config(cursor='hand2')
+foreman_list.config(cursor='hand2')
 
-phone_back_button = ttk.Button(master=phones_frame, text="Back", command=lambda: show_frame("Notebook"), width=10)
-phone_back_button.grid(row=2, columnspan=6, padx=5, pady=20)
+ToolTip(tl_phones_list, "Click to Copy", delay=500)
+ToolTip(foreman_list, "Click to Copy", delay=500)
+
+phone_back_button = ttk.Button(master=phones_frame, text="< Back", command=lambda: show_frame("Notebook"), width=10,
+                               bootstyle="secondary")
+phone_back_button.grid(row=2, columnspan=6, pady=10)
+
+# Bindings
+tl_phones_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, tl_phones_list))
+foreman_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, foreman_list))
+
+# ====================== Tab 1 - Dist. list frame ======================
+
+dist_frame = frames["Dist list"]
+dist_frame.rowconfigure(1, weight=1)
+dist_frame.columnconfigure(0, weight=1)
+dist_frame.columnconfigure(1, weight=1)
+dist_frame.columnconfigure(2, weight=1)
+dist_frame.columnconfigure(3, weight=1)
+
+label_1 = ttk.Label(dist_frame, text="Pass down", anchor='center')
+label_1.grid(row=0, column=0, pady=5)
+label_2 = ttk.Label(dist_frame, text="Preview (Semi)", anchor='center')
+label_2.grid(row=0, column=1, pady=5)
+label_3 = ttk.Label(dist_frame, text="Not Approved (12:00)", anchor='center')
+label_3.grid(row=0, column=2, pady=5)
+label_4 = ttk.Label(dist_frame, text="Approved", anchor='center')
+label_4.grid(row=0, column=3, pady=5)
+
+# Text widgets for the columns
+text_widgets = [Text(dist_frame, height=10, width=20) for _ in range(4)]
+for column, text_widget in enumerate(text_widgets, start=0):
+    text_widget.grid(row=1, column=column, sticky="nsew", pady=5, padx=2)
+
+# Back button
+dist_back_button = ttk.Button(master=dist_frame, text="< Back", command=lambda: show_frame("Notebook"), width=10,
+                              bootstyle="secondary")
+dist_back_button.grid(row=2, columnspan=4, pady=10)
 
 # ====================== Tab 2 - File ======================
-tab2.rowconfigure(2, weight=1)
-tab2.rowconfigure(3, weight=1)
-files_empty_label = ttk.Label(master=tab2)
-files_empty_label.grid(row=0, column=0, padx=110, pady=5, sticky="nsew")  # empty label
 
-dc_select_date_label = ttk.Label(master=tab2, text="   Select date:  ", )
+tab2.rowconfigure(0, weight=1)
+tab2.columnconfigure(0, weight=1)
+tab2.columnconfigure(2, weight=1)
+
+tab2_mid_frame = ttk.Frame(master=tab2)
+tab2_mid_frame.grid(row=0, column=1, sticky="nsew")
+
+tab2_mid_frame.rowconfigure(1, weight=1)
+
+dc_select_date_label = ttk.Label(master=tab2_mid_frame, text="   Select date:  ", )
 dc_select_date_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-dates_combobox = ttk.Combobox(master=tab2, values=cp_dates, postcommand=update_combo_list)
+dates_combobox = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list)
 dates_combobox.set("Date")
 dates_combobox.bind("<<ComboboxSelected>>", dc_combo_selected)
 dates_combobox.grid(row=1, column=2, padx=5, pady=5, sticky="w")
-dc_tl_listbox = Listbox(master=tab2, border=5, selectmode=ttk.EXTENDED, height=20, width=40)
+dc_tl_listbox = Listbox(master=tab2_mid_frame, border=5, selectmode=ttk.EXTENDED, height=20, width=40)
 dc_tl_listbox.bind("<Return>", dc_on_listbox_create)
 dc_tl_listbox.grid(row=2, column=1, columnspan=2, pady=20)
-scrollbar = ttk.Scrollbar(master=tab2, style="round")
-scrollbar.grid(row=2, column=3, columnspan=2, pady=20, sticky="nse")
-dc_create_button = ttk.Button(master=tab2, text="Create", command=dc_on_listbox_create, width=10)
+tab2_scrollbar = ttk.Scrollbar(master=tab2_mid_frame, style="round", command=dc_tl_listbox.yview)
+tab2_scrollbar.grid(row=2, column=3, pady=20, sticky="nsw")
+dc_tl_listbox.config(yscrollcommand=tab2_scrollbar.set)
+dc_create_button = ttk.Button(master=tab2_mid_frame, text="Create", command=dc_on_listbox_create, width=10,
+                              state=DISABLED)
 dc_create_button.grid(row=3, column=1, pady=10, sticky="e")
 
-dc_create_all_button = ttk.Button(master=tab2, text="Create all", command=create_all_delays, width=10, style="outline")
+dc_create_all_button = ttk.Button(master=tab2_mid_frame, text="Create all", command=create_all_delays, width=10,
+                                  style="outline",
+                                  state=DISABLED)
 dc_create_all_button.grid(row=3, column=2, pady=10, sticky="e")
 
 # ====================== Tab 3 - Folder ======================
+tab3.rowconfigure(0, weight=1)
+tab3.columnconfigure(0, weight=1)
+tab3.columnconfigure(2, weight=1)
 
-folders_empty_label = ttk.Label(master=tab3)
-folders_empty_label.grid(row=0, column=0, padx=97, pady=5, sticky="nsew")  # empty label
-select_folder_label = ttk.Label(master=tab3, text="   Select date:  ")
-select_folder_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-calendar_button = ttk.Button(master=tab3, text="Browse", command=pick_date, width=23, style="danger.Outline")
-calendar_button.grid(row=1, column=2, padx=5, pady=5, sticky="w")
+tab3_mid_frame = ttk.Frame(master=tab3)
+tab3_mid_frame.grid(row=0, column=1, sticky='nsew')
 
-discipline_frame = ttk.Frame(master=tab3)
-discipline_frame.grid(row=2, column=1, sticky="nsew", columnspan=2, pady=50)
+select_folder_label = ttk.Label(master=tab3_mid_frame, text="   Select date:  ")
+select_folder_label.grid(row=0, column=0, padx=5, pady=34, sticky="e")
+calendar_button = ttk.Button(master=tab3_mid_frame, text="Browse", command=pick_date, width=23, style="danger.Outline")
+calendar_button.grid(row=0, column=1, padx=5, pady=5, sticky="w")
+
+discipline_frame = ttk.Frame(master=tab3_mid_frame)
+discipline_frame.grid(row=1, column=0, sticky="nsew", columnspan=2, pady=40)
 fc_ocs_label = ttk.Label(master=discipline_frame, text="Num of OCS works")
-fc_ocs_label.grid(row=1, column=1, sticky="e", padx=5, pady=30, )
+fc_ocs_label.grid(row=0, column=0, sticky="e", padx=5, pady=30, )
 fc_scada_label = ttk.Label(master=discipline_frame, text="Num of SCADA works")
-fc_scada_label.grid(row=2, column=1, sticky="e", padx=5, pady=5)
-ocs_entry = ttk.Entry(master=discipline_frame, state="disabled")
-ocs_entry.grid(row=1, column=2, sticky="e", padx=5, )
-scada_entry = ttk.Entry(master=discipline_frame, state="disabled")
-scada_entry.grid(row=2, column=2, sticky="w", padx=5)
+fc_scada_label.grid(row=1, column=0, sticky="e", padx=5, pady=5)
+ocs_entry = ttk.Entry(master=discipline_frame, state="disabled", width=10)
+ocs_entry.grid(row=0, column=1, sticky="e", padx=5)
+scada_entry = ttk.Entry(master=discipline_frame, state="disabled", width=10)
+scada_entry.grid(row=1, column=1, sticky="e", padx=5)
 
 # Button
-create_button = ttk.Button(master=tab3, text="Create", command=create_folders, state="disabled", width=10)
-create_button.grid(row=3, column=2, sticky="n", pady=10)
+create_button = ttk.Button(master=tab3_mid_frame, text="Create", command=create_folders, state="disabled", width=10)
+create_button.grid(row=2, column=0, columnspan=2, sticky="n", pady=10)
 
 # ====================== Tab 4 - Edit ======================
 tab4.rowconfigure(0, weight=1)
@@ -2040,10 +2305,10 @@ tab4.columnconfigure(1, weight=1)
 
 # Date Select
 menu3_frame1 = ttk.Frame(master=tab4)
-menu3_frame1.grid(row=0, column=0, sticky="wes", padx=5, pady=5)
+menu3_frame1.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 dc_select_date_label = ttk.Label(menu3_frame1, text="   Select date:  ")
 dc_select_date_label.pack(side="left")
-dm_dates_combobox = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, bootstyle="danger")
+dm_dates_combobox = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list)
 dm_dates_combobox.set("Date")
 dm_dates_combobox.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_combobox.pack(side="left")
@@ -2053,8 +2318,13 @@ menu3_frame2 = ttk.Frame(master=tab4)
 menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 dm_tl_listbox = Listbox(menu3_frame2, border=5)
 
-dm_tl_listbox.pack(fill="both", expand=True)
+dm_tl_listbox.pack(side=LEFT, fill=BOTH, expand=True)
 dm_tl_listbox.bind("<Double-1>", dm_on_tl_listbox_2_click)
+
+tab3_scrollbar = ttk.Scrollbar(master=menu3_frame2, style="round", command=dm_tl_listbox.yview)
+tab3_scrollbar.pack(side=RIGHT, fill=BOTH)
+dm_tl_listbox.config(yscrollcommand=tab3_scrollbar.set)
+
 # Create a context menu
 context_menu = Menu(master=app, tearoff=0)
 context_menu.add_command(label="Rename", command=lambda: dm_on_tl_listbox_rename(None))
@@ -2072,6 +2342,8 @@ ttk.Label(menu3_frame3, text="   Selected:").grid(row=0, column=0, sticky="w", p
 tl_name_selected = ttk.Label(menu3_frame3, text="None", width=41, font=("Roboto", 9, "bold"))
 tl_name_selected.grid(row=0, column=1, sticky="e")
 tl_name_selected.bind("<Double-1>", dm_on_tl_listbox_rename)
+ToolTip(tl_name_selected, text="Double-click to rename")
+
 ttk.Label(menu3_frame3, text="Status:").grid(row=0, column=2, sticky="we", pady=5)
 frame3_status = ttk.Label(menu3_frame3, text="Not completed", style="danger", font=("Roboto", 9, "bold"))
 frame3_status.grid(row=0, column=3, sticky="e")
@@ -2127,6 +2399,7 @@ transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=transfer_co
 app.bind("<KeyPress-End>", enable_transfer_button)
 
 show_frame("Notebook")
+update_icons('default')
 clock()
 
 app.mainloop()
