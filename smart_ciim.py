@@ -1697,23 +1697,64 @@ def display_dist_list():
     if proc_path.exists():
         try:
             # Read the Excel file into a pandas DataFrame
-            df = pd.read_excel(proc_path, sheet_name='Dist. List', usecols='A:D')
+            df = pd.read_excel(proc_path, sheet_name='Dist. List', usecols='B, D, F, H')
             df.fillna('', inplace=True)
 
             # Iterate over the DataFrame and the text widgets at the same time
-            for col, text_widget in zip(df.columns, text_widgets):
+            for col, text_widget in zip(df.columns[:4], text_widgets):
                 # Clear the text widget first
                 text_widget.delete('1.0', END)
                 # Insert the data into the text widget
                 column_data = '\n'.join(df[col].astype(str))
                 text_widget.insert('1.0', column_data)
                 # Highlight lines containing "cc" after inserting the text
+
                 highlight_lines_containing_cc(text_widget)
+
 
         except ValueError as e:
             messagebox.showerror("Error", f"Failed to read Excel file: {e}")
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
+
+
+# Function to toggle between template and original content
+def toggle_content(text_widget, template, original_contents, column):
+    current_content = text_widget.get('1.0', 'end-1c')
+    if current_content.strip() == template.strip():
+        # If current content is the template, replace with original email
+        text_widget.delete('1.0', 'end')
+        text_widget.insert('1.0', original_contents[column])
+    else:
+        # If current content is not the template, store it and insert template
+        original_contents[column] = current_content
+        text_widget.delete('1.0', 'end')
+        text_widget.insert('1.0', template)
+
+    # Reapply the highlight to the text widget
+    highlight_lines_containing_cc(text_widget)
+
+
+def highlight_lines_containing_cc(text_widget):
+    # Define a tag with a yellow background
+    text_widget.tag_configure("highlight", background="#ED969D", font=("Roboto", 10, "bold"))
+
+    # Start from the beginning of the Text widget
+    start_index = '1.0'
+    while True:
+        # Search for the occurrence of "cc"
+        start_index = text_widget.search("cc:", start_index, END, nocase=True)
+        if not start_index:
+            break
+
+        # Find the end of the line where "cc" was found
+        end_index = f"{start_index} lineend"
+
+        # Add the highlight tag to the line
+        text_widget.tag_add("highlight", start_index, end_index)
+
+        # Move to the next character after the end index, to continue searching
+        start_index = f"{end_index}+1c"
 
 
 def display_phone_list():
@@ -1782,32 +1823,10 @@ def open_passdown():
     os.startfile(filename)
 
 
-def highlight_lines_containing_cc(text_widget):
-    # Define a tag with a yellow background
-    text_widget.tag_configure("highlight", background="yellow")
-
-    # Start from the beginning of the Text widget
-    start_index = '1.0'
-    while True:
-        # Search for the occurrence of "cc"
-        start_index = text_widget.search("cc", start_index, END, nocase=True)
-        if not start_index:
-            break
-
-        # Find the end of the line where "cc" was found
-        end_index = f"{start_index} lineend"
-
-        # Add the highlight tag to the line
-        text_widget.tag_add("highlight", start_index, end_index)
-
-        # Move to the next character after the end index, to continue searching
-        start_index = f"{end_index}+1c"
-
-
 # ========================= Root config =========================
 pyglet.font.add_file('digital-7/digital-7.ttf')
 
-app = ttk.Window()
+app = ttk.Window(themename="darkly")
 windll.shcore.SetProcessDpiAwareness(1)
 app.resizable(0, 0)
 app.title("Smart CIIM")
@@ -1837,7 +1856,6 @@ username_var = StringVar()
 username = ""
 current_frame = None
 # A global variable to keep track of whether the text widgets have been created
-text_widgets_created = False
 # Paths
 CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
@@ -2051,8 +2069,6 @@ login_button = ttk.Button(
 login_button.place(x=250, y=380)
 
 # ====================== Notebook Config ======================
-
-
 my_notebook = ttk.Notebook(master=frames["Notebook"])
 my_notebook.pack(fill="both", expand=True)
 
@@ -2091,14 +2107,10 @@ my_notebook.add(child=tab4)
 
 # ====================== Tab 1 - Home ======================
 
-# tab1.grid_columnconfigure(0, weight=1)
-# tab1.grid_rowconfigure(0, weight=1)
-
 tab1.columnconfigure(0, weight=1)
 tab1.columnconfigure(1, weight=0)
 tab1.rowconfigure(1, weight=1)
 tab1.rowconfigure(2, weight=1)
-# tab1.rowconfigure(2, weight=1)
 
 time_frame = ttk.Frame(master=tab1)
 time_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
@@ -2135,7 +2147,6 @@ utilities_frame = ttk.Labelframe(master=tab1, text='Utilities')
 utilities_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
 
 # Utilities
-
 phones_button = ttk.Button(master=utilities_frame, text="Phone numbers", command=lambda: display_phone_list(),
                            bootstyle='link.success')
 phones_button.pack(fill='x', padx=5, pady=5)
@@ -2159,52 +2170,53 @@ open_passdown_button = ttk.Button(master=utilities_frame, text="Open Passdown ",
                                   style="success.Link.TButton")
 open_passdown_button.pack(fill='x', padx=5, pady=5)
 
+# Create Theme menu option
 theme_button = ttk.Menubutton(utilities_frame, text="Theme")
 theme_button.pack(fill='x', padx=5, pady=5, side='bottom')
-# Create Transfer menu
+
 theme_menu = ttk.Menu(theme_button)
 
 for theme_name in style.theme_names():
     theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
-
 # Associates the inside menu with the menubutton
 theme_button["menu"] = theme_menu
 
 # ====================== Tab 1 -Phones frame ======================
 
 phones_frame = frames["Phones"]
-phones_frame.rowconfigure(1, weight=1)
+phones_frame.rowconfigure(2, weight=1)
 phones_frame.columnconfigure(0, weight=1)
 phones_frame.columnconfigure(2, weight=1)
-# phones_frame.columnconfigure(5, weight=1)
 
 # Team Leader names on the left side
-tl_label = ttk.Label(master=phones_frame, text='Team Leaders', anchor='center', font=('Roboto', 11))
-tl_label.grid(row=0, column=0, columnspan=2, pady=5, sticky='nsew')
+tl_label = ttk.Label(master=phones_frame, text="Team Leaders", anchor="center", font=("Roboto", 9, "bold"))
+tl_label.grid(row=1, column=0, columnspan=2, pady=5, sticky="nsew")
 
-tl_phones_list = ttk.Text(master=phones_frame, wrap='word', spacing1=7)
-tl_phones_list.grid(row=1, column=0, sticky='nsew')
-tl_phones_scroll = ttk.Scrollbar(master=phones_frame, style='round', command=tl_phones_list.yview)
-tl_phones_scroll.grid(row=1, column=1, sticky="nsw")
+tl_phones_list = ttk.Text(master=phones_frame, wrap="word", spacing1=7)
+tl_phones_list.grid(row=2, column=0, sticky="nsew")
+tl_phones_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=tl_phones_list.yview)
+tl_phones_scroll.grid(row=2, column=1, sticky="nsw")
 tl_phones_list.config(yscrollcommand=tl_phones_scroll.set)
 
 # Foreman names on the right side
-foreman_label = ttk.Label(master=phones_frame, text="Foremen", anchor='center', font=('Roboto', 11))
-foreman_label.grid(row=0, column=2, columnspan=2, padx=5, pady=5, sticky='nsew')
+foreman_label = ttk.Label(master=phones_frame, text="Foremen", anchor="center", font=("Roboto", 9, "bold"))
+foreman_label.grid(row=1, column=2, columnspan=2, padx=5, pady=5, sticky="nsew")
 foreman_list = ttk.Text(master=phones_frame, wrap="word", spacing1=7)
-foreman_list.grid(row=1, column=2, sticky="nsew")
-foreman_scroll = ttk.Scrollbar(master=phones_frame, style='round', command=foreman_list.yview)
-foreman_scroll.grid(row=1, column=3, sticky="nsw")
+foreman_list.grid(row=2, column=2, sticky="nsew")
+foreman_scroll = ttk.Scrollbar(master=phones_frame, style="round", command=foreman_list.yview)
+foreman_scroll.grid(row=2, column=3, sticky="nsw")
 foreman_list.config(yscrollcommand=foreman_scroll.set)
-tl_phones_list.config(cursor='hand2')
-foreman_list.config(cursor='hand2')
+tl_phones_list.config(cursor="hand2")
+foreman_list.config(cursor="hand2")
 
 ToolTip(tl_phones_list, "Click to Copy", delay=500)
 ToolTip(foreman_list, "Click to Copy", delay=500)
 
+# Back button
 phone_back_button = ttk.Button(master=phones_frame, text="< Back", command=lambda: show_frame("Notebook"), width=10,
                                bootstyle="secondary")
-phone_back_button.grid(row=2, columnspan=6, pady=10)
+
+phone_back_button.grid(row=0, columnspan=6, padx=10, pady=10, sticky="w")
 
 # Bindings
 tl_phones_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, tl_phones_list))
@@ -2213,30 +2225,53 @@ foreman_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, foreman_l
 # ====================== Tab 1 - Dist. list frame ======================
 
 dist_frame = frames["Dist list"]
-dist_frame.rowconfigure(1, weight=1)
-dist_frame.columnconfigure(0, weight=1)
-dist_frame.columnconfigure(1, weight=1)
-dist_frame.columnconfigure(2, weight=1)
-dist_frame.columnconfigure(3, weight=1)
 
-label_1 = ttk.Label(dist_frame, text="Pass down", anchor='center')
-label_1.grid(row=0, column=0, pady=5)
-label_2 = ttk.Label(dist_frame, text="Preview (Semi)", anchor='center')
-label_2.grid(row=0, column=1, pady=5)
-label_3 = ttk.Label(dist_frame, text="Not Approved (12:00)", anchor='center')
-label_3.grid(row=0, column=2, pady=5)
-label_4 = ttk.Label(dist_frame, text="Approved", anchor='center')
-label_4.grid(row=0, column=3, pady=5)
+# Configure the frame to give equal weight to all columns
+for i in range(4):
+    dist_frame.columnconfigure(i, weight=1)
+dist_frame.rowconfigure(2, weight=1)
 
-# Text widgets for the columns
-text_widgets = [Text(dist_frame, height=10, width=20) for _ in range(4)]
-for column, text_widget in enumerate(text_widgets, start=0):
-    text_widget.grid(row=1, column=column, sticky="nsew", pady=5, padx=2)
+templates = {
+    "Pass down": "Hi Dana,\n\nNothing special happened during the shift.",
+    "Preview": "Hi all,"
+               "\n\n  1. TLs ... didn't send forms."
+               "\n  2.TLs ... didn't send worklogs."
+               "\n  3.TLs ... was delayed due to no TP."
+               "\n\n\n\n\nHi Yoni,"
+               "\n\nFind attached the draft of the CIIM Report.",
+    "Not Approved (12:00)": "Hi Randall,"
+                            "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend (dd-dd.mm.yy)."
+                            "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in the file.",
+    "Approved": "Hi all,"
+                "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend  (dd-dd.mm.yy)."
+}
+
+# Store the original content of the text widgets
+original_contents = ['' for _ in range(4)]
+
+# Text widgets list assumed to be defined here, before the buttons are created
+text_widgets = [Text(dist_frame) for _ in range(4)]
+
+# Create buttons instead of labels and place them in the grid
+for column, (label_text, template) in enumerate(templates.items()):
+    # Create a closure to capture the current column and text widget
+    def make_command(col, tw, temp):
+        return lambda: toggle_content(tw, temp, original_contents, col)
+
+
+    button = ttk.Button(dist_frame, text=label_text, command=make_command(column, text_widgets[column], template),
+                        bootstyle="link")
+    button.grid(row=1, column=column, pady=5, padx=2)
+
+# Grid the text widgets and initialize original_contents with the current email content
+for column, text_widget in enumerate(text_widgets):
+    text_widget.grid(row=2, column=column, sticky="nsew", pady=5, padx=2)
+    original_contents[column] = text_widget.get('1.0', 'end-1c')
 
 # Back button
 dist_back_button = ttk.Button(master=dist_frame, text="< Back", command=lambda: show_frame("Notebook"), width=10,
                               bootstyle="secondary")
-dist_back_button.grid(row=2, columnspan=4, pady=10)
+dist_back_button.grid(row=0, columnspan=4, padx=10, pady=10, sticky="w")
 
 # ====================== Tab 2 - File ======================
 
@@ -2350,6 +2385,7 @@ frame3_status.grid(row=0, column=3, sticky="e")
 
 # Frame 4 - Manager
 menu3_frame4 = ttk.Frame(master=tab4)
+
 menu3_frame4.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 menu3_frame4.columnconfigure(0, weight=2)
 menu3_frame4.columnconfigure(1, weight=1)
@@ -2357,6 +2393,7 @@ menu3_frame4.columnconfigure(2, weight=2)
 menu3_frame4.columnconfigure(3, weight=1)
 menu3_frame4.columnconfigure(4, weight=1)
 menu3_frame4.rowconfigure(12, weight=1)
+
 ttk.Label(menu3_frame4, text="Start time").grid(row=0, column=0, padx=5)
 frame4_stime_entry = ttk.Entry(menu3_frame4)
 frame4_stime_entry.grid(row=0, column=1, pady=2, sticky="w")
@@ -2399,7 +2436,7 @@ transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=transfer_co
 app.bind("<KeyPress-End>", enable_transfer_button)
 
 show_frame("Notebook")
-update_icons('default')
+update_icons("darkly")
 clock()
 
 app.mainloop()
