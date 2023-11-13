@@ -955,53 +955,75 @@ def format_time(time_obj):
         return "None"
 
 
-def transfer_data(source_file, destination_file, mappings, dest_start_row=4, dest_sheet_name=None):
+def transfer_data_to_cancelled():
     """
     Transfers data from a source file to a destination file based on column mappings provided.
     """
     # Load the workbooks and worksheets in read_only mode for the source file
-    src_wb = load_workbook(source_file, read_only=True)
-    src_ws = src_wb.active
 
-    dest_wb = load_workbook(destination_file)
-    dest_ws = dest_wb[dest_sheet_name] if dest_sheet_name else dest_wb.active
+    confirm = messagebox.askokcancel("Warning", f"Source: "
+                                                f"{construction_wp_path.name}\n\n"
+                                                "Please make sure to fill all the Cancelled works in the Work Plan before proceeding.")
+    if not confirm:
+        return
+
+    # dest_file = filedialog.askopenfilename(initialdir=CIIM_DIR_PATH)
+    #
+    # if not dest_file:
+    #     return
+
+    dest_file = Path(
+        CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / '2023' / 'WW45' / 'Weekly Delay table WW45.xlsx')
+
+    src_wb = load_workbook(construction_wp_path, read_only=True)
+    src_ws = src_wb["Const. Plan"]
+
+    dest_wb = load_workbook(dest_file)
+    dest_ws = dest_wb["Work Cancelled"]
+
+    # Print all headers from the source file
+    print("Source headers:", [cell.value for cell in src_ws[2]])
+    print("Destination headers:", [cell.value for cell in dest_ws[3]])
 
     src_header = {
         cell.value: col_num + 1
-        for col_num, cell in enumerate(src_ws[3])
-        if cell.value in mappings
-           or any(cell.value in key for key in mappings if isinstance(key, tuple))
+        for col_num, cell in enumerate(src_ws[2])
+        if cell.value in TO_WEEKLY_CANCELLED_MAPPING
+           or any(cell.value in key for key in TO_WEEKLY_CANCELLED_MAPPING if isinstance(key, tuple))
     }
 
     dest_header = {
         cell.value: col_num + 1
         for col_num, cell in enumerate(dest_ws[3])
-        if cell.value in mappings.values()
+        if cell.value in TO_WEEKLY_CANCELLED_MAPPING.values()
     }
 
-    # Print all headers from the source file
-    print("Source headers:", [cell.value for cell in src_ws[3]])
-    print("Destination headers:", [cell.value for cell in dest_ws[3]])
-
-    dest_row_counter = dest_start_row
+    dest_row_counter = 4
     observation_col = src_header.get("Observations", None)
 
     transferred_rows = 0
-    for row_num, row in enumerate(src_ws.iter_rows(min_row=4, values_only=True), 4):
+    for row_num, row in enumerate(src_ws.iter_rows(min_row=3, values_only=True), 4):
         if observation_col:
 
             # Check if the row is blank by looking at certain key columns
-            key_column_indexes = [src_header['T.P Start [Time]'] - 1,
-                                  src_header['Team Leader\nName (Phone)'] - 1]
+            key_column_indexes = [
+                src_header['T.P Start [Time]'] - 1,
+                src_header['Team Leader\nName (Phone)'] - 1,
+                src_header['Date [DD/MM/YY]'] - 1,
+            ]
             if all(not row[idx] for idx in key_column_indexes):
                 continue  # Skip the row as it is considered blank
 
             observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
+            # It will skip the rows that are blank or those who doesn't have 'Cancel' in the Observation cell
             if not observation_value or "cancel" not in observation_value.lower():
+                continue
+            # It will skip the rows that were cancelled by OCS/Scada/TS
+            if any(word in observation_value.lower() for word in ["scada", "ocs", "ts"]):
                 print(f"Skipping row {row_num} due to observation value: {observation_value}")
                 continue
 
-        for src_col, dest_col in mappings.items():
+        for src_col, dest_col in TO_WEEKLY_CANCELLED_MAPPING.items():
             if isinstance(src_col, tuple) and src_col == (
                     "T.P Start [Time]",
                     "T.P End [Time]",
@@ -1046,6 +1068,86 @@ def transfer_data(source_file, destination_file, mappings, dest_start_row=4, des
         dest_row_counter += 1
         transferred_rows += 1
 
+    messagebox.showinfo("Success",
+                        f"{transferred_rows} rows transferred to cancelled works.")
+
+    dest_wb.save(dest_file)
+    dest_wb.close()
+    src_wb.close()
+
+
+def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_row=4):
+    """
+    Transfers data from a source file to a destination file based on column mappings provided.
+    Skips rows where 'Observations' column contains 'cancel'.
+    """
+
+    # Load the workbooks and worksheets
+    src_wb = load_workbook(source_file, read_only=True)
+    src_ws = src_wb.active
+
+    dest_wb = load_workbook(destination_file)
+    dest_ws = dest_wb["Work Delay"]
+
+    # Mapping source and destination headers to their respective column numbers
+    src_header = {
+        cell.value: col_num + 1
+        for col_num, cell in enumerate(src_ws[3])
+        if cell.value in mappings or any(cell.value in key for key in mappings if isinstance(key, tuple))
+    }
+
+    dest_header = {
+        cell.value: col_num + 1
+        for col_num, cell in enumerate(dest_ws[3])
+        if cell.value in mappings.values()
+    }
+
+    # Find the column number for "Observations" in the source file
+    observation_col_num = None
+    for col_num, cell in enumerate(src_ws[3]):
+        if cell.value == "Observations":
+            observation_col_num = col_num + 1
+            break
+
+    if observation_col_num is None:
+        print("Warning: 'Observations' column not found in the source file.")
+        return
+
+    # Print headers for debugging
+    print("Source headers:", [cell.value for cell in src_ws[3]])
+    print("Destination headers:", [cell.value for cell in dest_ws[3]])
+
+    dest_row_counter = dest_start_row
+    transferred_rows = 0
+
+    # Iterating through each row in the source worksheet
+    for row_num, row in enumerate(src_ws.iter_rows(min_row=4, values_only=True), 4):
+        # Checks if the row is blank by looking at certain key columns
+        key_column_indexes = [
+            src_header['T.P Start [Time]'] - 1,
+            src_header['Team Leader\nName (Phone)'] - 1,
+            src_header['Date [DD/MM/YY]'] - 1
+        ]
+        if all(not row[idx] for idx in key_column_indexes):
+            continue  # Skip the row as it is considered blank
+
+        if observation_col_num and row[observation_col_num - 1] and "cancel" in row[observation_col_num - 1].lower():
+            print(f"Skipping row {row_num} due to 'cancel' in Observations value : {row[observation_col_num - 1]}")
+            continue
+
+        # Transferring data based on mappings
+        for src_col, dest_col in mappings.items():
+            if src_col in src_header and dest_col in dest_header:
+                dest_ws.cell(row=dest_row_counter, column=dest_header[dest_col]).value = row[
+                    src_header[src_col] - 1]
+
+            else:
+                print(f"Missing columns '{src_col}' or '{dest_col}' in source or destination for row {row_num}.")
+
+        dest_row_counter += 1
+        transferred_rows += 1  # Increment only if data is actually transferred in this row
+
+    # Save and close workbooks
     dest_wb.save(destination_file)
     dest_wb.close()
     src_wb.close()
@@ -1059,40 +1161,22 @@ def transfer_combined_data():
     def on_confirm():
 
         delay_transferred = 0
-        cancelled_transferred = 0
-
-        # Retrieve values from the Entry widgets
+        
         delay_value = delay_entry.get().strip()
-        cancelled_value = cancelled_entry.get().strip()
-
-        # Convert to int or None if blank
         delay_int = int(delay_value) if delay_value else None
-        cancelled_int = int(cancelled_value) if cancelled_value else None
 
         try:
             # Transfer for delay
             if delay_int is not None:
-                delay_transferred = transfer_data(
+                delay_transferred = transfer_data_to_delay(
                     daily_report_path,
                     weekly_delay_path,
                     TO_WEEKLY_DELAY_MAPPINGS,
-                    delay_int,
-                    dest_sheet_name="Work Delay",
-                )
-
-            # Transfer for cancelled
-            if cancelled_int is not None:
-                cancelled_transferred = transfer_data(
-                    daily_report_path,
-                    weekly_delay_path,
-                    TO_WEEKLY_CANCELLED_MAPPING,
-                    cancelled_int,
-                    dest_sheet_name="Work Cancelled",
-                )
+                    delay_int)
 
             # Updated message to show how many rows were transferred
-            messagebox.showinfo("Success",
-                                f"{delay_transferred} rows transferred to delays\n{cancelled_transferred} rows transferred to cancelled works.")
+            transferred_message = f"{delay_transferred} rows transferred." if delay_transferred is not None else "No rows were transferred."
+            messagebox.showinfo("Success", transferred_message)
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
@@ -1124,17 +1208,14 @@ def transfer_combined_data():
         confirm_frame.pack(fill="both", expand=True)  # Show confirm frame
 
         delay_input = delay_entry.get().strip()
-        cancelled_input = cancelled_entry.get().strip()
 
         delay_input_label.config(text=f"Delay row: {delay_input}")
-        cancelled_input_label.config(text=f"Cancelled row: {cancelled_input}")
 
     # Function to update the state of the "Confirm" button based on the Entry widgets' content
     def update_next_button_state(*args):
         delay_input = delay_entry.get().strip()
-        cancelled_input = cancelled_entry.get().strip()
 
-        if delay_input or cancelled_input:
+        if delay_input:
             next_button["state"] = "normal"
         else:
             next_button["state"] = "disabled"
@@ -1180,12 +1261,6 @@ def transfer_combined_data():
     delay_entry = ttk.Entry(input_frame, width=12)
     delay_entry.grid(row=1, padx=5, column=1, pady=5, sticky="w")
 
-    cancelled_label = ttk.Label(input_frame, text="Cancelled row")
-    cancelled_label.grid(row=2, column=0, padx=20, pady=5, sticky="w")
-
-    cancelled_entry = ttk.Entry(input_frame, width=12)
-    cancelled_entry.grid(row=2, column=1, padx=5, pady=5, sticky="w")
-
     # Toolbar + Buttons
     toolbar_input_frame = ttk.Frame(master=input_frame)
     toolbar_input_frame.grid(row=3, columnspan=3, sticky="nsew")
@@ -1212,17 +1287,12 @@ def transfer_combined_data():
     delay_input_label = ttk.Label(confirm_frame, text="Delay row: ")
     delay_input_label.grid(row=3, column=0, padx=20, pady=5, sticky="w")
 
-    cancelled_input_label = ttk.Label(confirm_frame, text="Cancelled row: ")
-    cancelled_input_label.grid(row=4, column=0, padx=20, pady=5, sticky="w")
-
     # Bind the Entry widgets to the update function to be called whenever their content changes
     delay_entry.bind("<KeyRelease>", update_next_button_state)
-    cancelled_entry.bind("<KeyRelease>", update_next_button_state)
 
     # Apply the validation function to the Entry widgets
     vcmd = top_level.register(validate_input)
     delay_entry.config(validate="key", validatecommand=(vcmd, '%S'))
-    cancelled_entry.config(validate="key", validatecommand=(vcmd, '%S'))
 
     # Toolbar + Buttons
     toolbar_confirm_frame = ttk.Frame(master=confirm_frame)
@@ -1736,24 +1806,32 @@ def toggle_content(text_widget, template, original_contents, column):
 
 
 def highlight_lines_containing_cc(text_widget):
-    # Define a tag with a yellow background
-    text_widget.tag_configure("highlight", background="#ED969D", font=("Roboto", 10, "bold"))
+    # Defines a tag for 'email' and 'whatsapp'
+    text_widget.tag_configure("highlight", underline=True, font=("Roboto", 9, "bold"))
+    # Defines a tag for 'cc' with a different style
+    text_widget.tag_configure("cc_highlight", font=("Roboto", 9, "bold"), background='#f90b31')
 
-    # Start from the beginning of the Text widget
+    words_to_highlight = ["email", "whatsapp", "preview"]
+
+    # Iterate over the list of words and highlight them with the 'highlight' tag
+    for word in words_to_highlight:
+        start_index = '1.0'
+        while True:
+            start_index = text_widget.search(word, start_index, 'end', nocase=True)
+            if not start_index:
+                break
+            end_index = f"{start_index} lineend"
+            text_widget.tag_add("highlight", start_index, end_index)
+            start_index = f"{end_index}+1c"
+
+    # Search and highlight 'cc' with a different tag 'cc_highlight'
     start_index = '1.0'
     while True:
-        # Search for the occurrence of "cc"
-        start_index = text_widget.search("cc:", start_index, END, nocase=True)
+        start_index = text_widget.search("cc", start_index, 'end', nocase=True)
         if not start_index:
             break
-
-        # Find the end of the line where "cc" was found
         end_index = f"{start_index} lineend"
-
-        # Add the highlight tag to the line
-        text_widget.tag_add("highlight", start_index, end_index)
-
-        # Move to the next character after the end index, to continue searching
+        text_widget.tag_add("cc_highlight", start_index, end_index)
         start_index = f"{end_index}+1c"
 
 
@@ -1897,16 +1975,17 @@ TL_BLACKLIST = [
     "Rami Arami",
 ]
 # List of Delay reasons
-delay_reasons = ["Delay due to no TP",
-                 "Delay due to track vehicle maneuvers",
-                 "Delay due to waiting for the ISR/WSP Supervisor",
-                 "Delay due to waiting for the ISR Safety/ISR Comm. Supervisor",
-                 "Delay due to in the release of the electrified area/rail",
-                 "Delay due to coordination with the control center for the TP",
-                 "Delay due to track vehicle maneuvers",
-                 "Delay due to real hours are different for the 612",
-                 "--Other--"
-                 ]
+delay_reasons = [
+    "Delay due to no TP",
+    "Delay due to track vehicle maneuvers",
+    "Delay due to waiting for the ISR/WSP Supervisor",
+    "Delay due to waiting for the ISR Safety/ISR Comm. Supervisor",
+    "Delay due to in the release of the electrified area/rail",
+    "Delay due to coordination with the control center for the TP",
+    "Delay due to track vehicle maneuvers",
+    "Delay due to real hours are different for the 612",
+    "--Other--"
+]
 # ============================ Mappings ============================
 CONSTRUCTION_WP_HEADERS = [
     "Discipline [OCS/Old Bridges/TS/Scada]",
@@ -1933,29 +2012,6 @@ HEADER_TO_INDEX = {header: index for index, header in enumerate(CONSTRUCTION_WP_
 TO_DAILY_REPORT_MAPPINGS = {
     header: header for header in CONSTRUCTION_WP_HEADERS}
 
-#
-#
-# TO_DAILY_REPORT_MAPPINGS = {
-#     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS/Old Bridges/TS/Scada]",
-#     "WW [Nº]": "WW [Nº]",
-#     "Date [DD/MM/YY]": "Date [DD/MM/YY]",
-#     "T.P Start [Time]": "T.P Start [Time]",
-#     "T.P End [Time]": "T.P End [Time]",
-#     "T.P Start [K.P]": "T.P Start [K.P]",
-#     "T.P End [K.P]": "T.P End [K.P]",
-#     "ISR Start Section [Name]": "ISR Start Section [Name]",
-#     "ISR  End Section [Name]": "ISR  End Section [Name]",
-#     "EP": "EP",
-#     "Foremen [Israel]": "Foremen [Israel]",
-#     "Team Name": "Team Name",
-#     "Team Leader\nName (Phone)": "Team Leader\nName (Phone)",
-#     "Work Description (Baseline)": "Work Description",
-#     "ISR Safety Request": "ISR Safety Request",
-#     "ISR Comm&Rail:": "ISR Comm&Rail:",
-#     "ISR T.P request (All/Track number)": "ISR T.P request (All/Track number)",
-#     "Observations": "Observations",
-# }
-
 TO_WEEKLY_DELAY_MAPPINGS = {
     "WW [Nº]": "WW",
     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
@@ -1971,17 +2027,8 @@ TO_WEEKLY_DELAY_MAPPINGS = {
     "Actual Finish Time (TL):": "Actual Finish Time (Real Finish time - TL)",
     "Number of workers": "Workers",
 }
+
 TO_WEEKLY_CANCELLED_MAPPING = {
-    "WW [Nº]": "WW",
-    "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
-    "Date [DD/MM/YY]": "Date",
-    "Observations": "Reason",
-    "Team Leader\nName (Phone)": "Team leader",
-    "Work Description": "Work Description",
-    ("T.P Start [Time]", "T.P End [Time]"): "Planned hour per shift",
-    "EP": "ISR section {EP}",
-}
-TO_WEEKLY_CANCELLED2_MAPPING = {
     "WW [Nº]": "WW",
     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
     "Date [DD/MM/YY]": "Date",
@@ -2143,10 +2190,25 @@ home_browse_button.pack(anchor='sw', side='left', pady=5)
 path_entry = ttk.Entry(master=path_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
-utilities_frame = ttk.Labelframe(master=tab1, text='Utilities')
+utilities_frame = ttk.Frame(master=tab1)
 utilities_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
 
 # Utilities
+open_wp_button = ttk.Button(master=utilities_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
+                            style="success.Link.TButton")
+open_wp_button.pack(fill='x', padx=5, pady=5)
+open_proc_button = ttk.Button(master=utilities_frame, text="Open Procedure", command=lambda: open_precedure_file(),
+                              style="success.Link.TButton")
+open_proc_button.pack(fill='x', padx=5, pady=5)
+
+open_faults_button = ttk.Button(master=utilities_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
+                                style="success.Link.TButton")
+open_faults_button.pack(fill='x', padx=5, pady=5)
+open_passdown_button = ttk.Button(master=utilities_frame, text="Open Passdown ",
+                                  command=lambda: open_passdown(),
+                                  style="success.Link.TButton")
+open_passdown_button.pack(fill='x', padx=5, pady=5)
+
 phones_button = ttk.Button(master=utilities_frame, text="Phone numbers", command=lambda: display_phone_list(),
                            bootstyle='link.success')
 phones_button.pack(fill='x', padx=5, pady=5)
@@ -2155,20 +2217,10 @@ dist_button = ttk.Button(master=utilities_frame, text="Distribution List", comma
                          style='success.Link.TButton')
 dist_button.pack(fill='x', padx=5, pady=5)
 
-open_proc_button = ttk.Button(master=utilities_frame, text="Open Procedure", command=lambda: open_precedure_file(),
-                              style="success.Link.TButton")
-open_proc_button.pack(fill='x', padx=5, pady=5)
-
-open_wp_button = ttk.Button(master=utilities_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
-                            style="success.Link.TButton")
-open_wp_button.pack(fill='x', padx=5, pady=5)
-open_faults_button = ttk.Button(master=utilities_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
-                                style="success.Link.TButton")
-open_faults_button.pack(fill='x', padx=5, pady=5)
-open_passdown_button = ttk.Button(master=utilities_frame, text="Open Passdown ",
-                                  command=lambda: open_passdown(),
-                                  style="success.Link.TButton")
-open_passdown_button.pack(fill='x', padx=5, pady=5)
+transfer_all_button = ttk.Button(master=utilities_frame, text="Transfer Cancelled ",
+                                 command=lambda: transfer_data_to_cancelled(),
+                                 style="success.Link.TButton")
+transfer_all_button.pack(fill='x', padx=5, pady=5)
 
 # Create Theme menu option
 theme_button = ttk.Menubutton(utilities_frame, text="Theme")
@@ -2233,40 +2285,48 @@ dist_frame.rowconfigure(2, weight=1)
 
 templates = {
     "Pass down": "Hi Dana,\n\nNothing special happened during the shift.",
-    "Preview": "Hi all,"
+    "Preview": "              Email (SEMI):"
+               "\n\nHi all,"
                "\n\n  1. TLs ... didn't send forms."
                "\n  2.TLs ... didn't send worklogs."
                "\n  3.TLs ... was delayed due to no TP."
-               "\n\n\n\n\nHi Yoni,"
+               "\n\n\n\n\n\n\n             Email (ISR):"
+               "\n\nHi Yoni,"
                "\n\nFind attached the draft of the CIIM Report.",
-    "Not Approved (12:00)": "Hi Randall,"
-                            "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend (dd-dd.mm.yy)."
-                            "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in the file.",
-    "Approved": "Hi all,"
+    "Not Approved": "              Email (12:00):"
+                    "\n\nHi Randall,"
+                    "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend (dd-dd.mm.yy)."
+                    "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in the file."
+                    "\n\n\n           Whatsapp (16:00):"
+                    "\n\nGood afternoon everyone,\nAttached is the updated work file for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
+                    "\nPlease note that the hours listed are the starting hours of the T.P. Please keep in touch with your managers about the time you should be in the field."
+                    "\nGood luck."
+                    "\n*TPs and supervisors in charge will be updated by ISR as soon as possible.*",
+    "Approved": "      Email (17:00~20:00):"
+                "\n\nHi all,"
                 "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend  (dd-dd.mm.yy)."
 }
 
 # Store the original content of the text widgets
 original_contents = ['' for _ in range(4)]
 
-# Text widgets list assumed to be defined here, before the buttons are created
+# Text widgets list
 text_widgets = [Text(dist_frame) for _ in range(4)]
 
-# Create buttons instead of labels and place them in the grid
+
+# Function to create button commands
+def make_command(col, tw, temp):
+    return lambda: toggle_content(tw, temp, original_contents, col)
+
+
+# Creates buttons and text widgets, and place them in the frame inside the canvas
 for column, (label_text, template) in enumerate(templates.items()):
-    # Create a closure to capture the current column and text widget
-    def make_command(col, tw, temp):
-        return lambda: toggle_content(tw, temp, original_contents, col)
-
-
     button = ttk.Button(dist_frame, text=label_text, command=make_command(column, text_widgets[column], template),
                         bootstyle="link")
     button.grid(row=1, column=column, pady=5, padx=2)
-
-# Grid the text widgets and initialize original_contents with the current email content
-for column, text_widget in enumerate(text_widgets):
-    text_widget.grid(row=2, column=column, sticky="nsew", pady=5, padx=2)
-    original_contents[column] = text_widget.get('1.0', 'end-1c')
+    text_widget = text_widgets[column]
+    text_widget.grid(row=2, column=column, sticky="nsew", padx=2)
+    ToolTip(button, text="Click for template", delay=600)
 
 # Back button
 dist_back_button = ttk.Button(master=dist_frame, text="< Back", command=lambda: show_frame("Notebook"), width=10,
