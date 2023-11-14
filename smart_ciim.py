@@ -955,30 +955,16 @@ def format_time(time_obj):
         return "None"
 
 
-def transfer_data_to_cancelled():
+def transfer_data_to_cancelled(source_file, destination_file, mappings):
     """
     Transfers data from a source file to a destination file based on column mappings provided.
     """
     # Load the workbooks and worksheets in read_only mode for the source file
 
-    confirm = messagebox.askokcancel("Warning", f"Source: "
-                                                f"{construction_wp_path.name}\n\n"
-                                                "Please make sure to fill all the Cancelled works in the Work Plan before proceeding.")
-    if not confirm:
-        return
-
-    # dest_file = filedialog.askopenfilename(initialdir=CIIM_DIR_PATH)
-    #
-    # if not dest_file:
-    #     return
-
-    dest_file = Path(
-        CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / '2023' / 'WW45' / 'Weekly Delay table WW45.xlsx')
-
-    src_wb = load_workbook(construction_wp_path, read_only=True)
+    src_wb = load_workbook(source_file, read_only=True)
     src_ws = src_wb["Const. Plan"]
 
-    dest_wb = load_workbook(dest_file)
+    dest_wb = load_workbook(destination_file)
     dest_ws = dest_wb["Work Cancelled"]
 
     # Print all headers from the source file
@@ -988,14 +974,14 @@ def transfer_data_to_cancelled():
     src_header = {
         cell.value: col_num + 1
         for col_num, cell in enumerate(src_ws[2])
-        if cell.value in TO_WEEKLY_CANCELLED_MAPPING
-           or any(cell.value in key for key in TO_WEEKLY_CANCELLED_MAPPING if isinstance(key, tuple))
+        if cell.value in mappings
+           or any(cell.value in key for key in mappings if isinstance(key, tuple))
     }
 
     dest_header = {
         cell.value: col_num + 1
         for col_num, cell in enumerate(dest_ws[3])
-        if cell.value in TO_WEEKLY_CANCELLED_MAPPING.values()
+        if cell.value in mappings.values()
     }
 
     dest_row_counter = 4
@@ -1023,7 +1009,7 @@ def transfer_data_to_cancelled():
                 print(f"Skipping row {row_num} due to observation value: {observation_value}")
                 continue
 
-        for src_col, dest_col in TO_WEEKLY_CANCELLED_MAPPING.items():
+        for src_col, dest_col in mappings.items():
             if isinstance(src_col, tuple) and src_col == (
                     "T.P Start [Time]",
                     "T.P End [Time]",
@@ -1068,15 +1054,82 @@ def transfer_data_to_cancelled():
         dest_row_counter += 1
         transferred_rows += 1
 
-    messagebox.showinfo("Success",
-                        f"{transferred_rows} rows transferred to cancelled works.")
-
-    dest_wb.save(dest_file)
+    dest_wb.save(destination_file)
     dest_wb.close()
     src_wb.close()
 
+    return transferred_rows
 
-def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_row=4):
+
+def confirm_transfer_cancelled():
+    def on_cancel():
+        top_level.destroy()
+
+    def on_confirm():
+
+        cancelled_transferred = 0
+
+        try:
+
+            cancelled_transferred = transfer_data_to_cancelled(
+                construction_wp_path,
+                weekly_delay_path,
+                TO_WEEKLY_CANCELLED_MAPPING)
+
+            # Updated message to show how many rows were transferred
+            transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None else "No rows were transferred."
+            messagebox.showinfo("Success", transferred_message)
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+        top_level.destroy()
+
+    messagebox.showwarning("Reminder", f"Make sure to fill first all the Cancelled works in the Construction plan!")
+
+    # weekly_delay_path = filedialog.askopenfilename(initialdir=CIIM_DIR_PATH)
+    #
+    # if not weekly_delay_path:
+    #     return
+
+    weekly_delay_path = Path(
+        CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / '2023' / 'WW45' / 'Weekly Delay table WW45.xlsx')
+
+    # Root
+    top_level = ttk.Toplevel()
+    top_level.withdraw()  # Hide the window initially
+    top_level.title("Transfer Cancelled works")
+    top_level.geometry('320x200')
+    top_level.resizable(0, 0)
+
+    # Center the top_level window
+    center_window(top_level, top_level.master)
+    top_level.deiconify()  # Show the window after centering
+
+    confirm_frame = ttk.Frame(top_level)
+    confirm_frame.pack(fill="both", expand=True)
+
+    confirm_frame.grid_rowconfigure(0, weight=1)
+    confirm_frame.grid_rowconfigure(7, weight=1)
+    confirm_frame.grid_columnconfigure(4, weight=1)
+
+    source_label = ttk.Label(confirm_frame, text=f"SOURCE: {construction_wp_path.name}")
+    source_label.grid(row=1, column=0, columnspan=5, pady=10, padx=20, sticky="nsew")
+
+    destination_label = ttk.Label(confirm_frame, text=f"DESTINATION: {weekly_delay_path.name}")
+    destination_label.grid(row=2, column=0, columnspan=5, padx=20, pady=5, sticky="w")
+
+    # Toolbar + Buttons
+    toolbar_confirm_frame = ttk.Frame(master=confirm_frame)
+    toolbar_confirm_frame.grid(row=7, columnspan=5, sticky="nsew")
+
+    confirm_transfer_button = ttk.Button(toolbar_confirm_frame, text="Confirm", command=on_confirm, width=10)
+    confirm_transfer_button.pack(side=RIGHT, anchor="se", padx=5, pady=10)
+
+    cancel_button = ttk.Button(toolbar_confirm_frame, text="Cancel", command=on_cancel, width=10, style="secondary")
+    cancel_button.pack(side=RIGHT, anchor="se", padx=5, pady=10)
+
+
+def transfer_delay_data(source_file, destination_file, mappings, dest_start_row=4):
     """
     Transfers data from a source file to a destination file based on column mappings provided.
     Skips rows where 'Observations' column contains 'cancel'.
@@ -1155,20 +1208,20 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
     return transferred_rows
 
 
-def transfer_combined_data():
+def confirm_transfer_delay():
     # ----------------------- Logic Handling Functions -----------------------
 
     def on_confirm():
 
         delay_transferred = 0
-        
+
         delay_value = delay_entry.get().strip()
         delay_int = int(delay_value) if delay_value else None
 
         try:
             # Transfer for delay
             if delay_int is not None:
-                delay_transferred = transfer_data_to_delay(
+                delay_transferred = transfer_delay_data(
                     daily_report_path,
                     weekly_delay_path,
                     TO_WEEKLY_DELAY_MAPPINGS,
@@ -1904,7 +1957,7 @@ def open_passdown():
 # ========================= Root config =========================
 pyglet.font.add_file('digital-7/digital-7.ttf')
 
-app = ttk.Window(themename="darkly")
+app = ttk.Window()
 windll.shcore.SetProcessDpiAwareness(1)
 app.resizable(0, 0)
 app.title("Smart CIIM")
@@ -2218,7 +2271,7 @@ dist_button = ttk.Button(master=utilities_frame, text="Distribution List", comma
 dist_button.pack(fill='x', padx=5, pady=5)
 
 transfer_all_button = ttk.Button(master=utilities_frame, text="Transfer Cancelled ",
-                                 command=lambda: transfer_data_to_cancelled(),
+                                 command=lambda: confirm_transfer_cancelled(),
                                  style="success.Link.TButton")
 transfer_all_button.pack(fill='x', padx=5, pady=5)
 
@@ -2489,14 +2542,14 @@ save_button = ttk.Button(toolbar_frame, text="Save", command=save_delay_wb, stat
 save_button.pack(anchor="n", side=RIGHT, padx=10, pady=10)
 
 transfer_button_visible = False
-transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=transfer_combined_data,
+transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=confirm_transfer_delay,
                              width=10, style="info")
 
 # Bind the "End" key press event to enable_transfer_button
 app.bind("<KeyPress-End>", enable_transfer_button)
 
 show_frame("Notebook")
-update_icons("darkly")
+update_icons("dafault")
 clock()
 
 app.mainloop()
