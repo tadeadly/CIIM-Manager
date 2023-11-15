@@ -1,21 +1,19 @@
 import os
 import re
 import shutil
+import time
+from datetime import timedelta, datetime
 from pathlib import Path
 from tkinter import *
-from tkinter import filedialog
+from tkinter import filedialog, simpledialog, messagebox, Menu
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
-from ttkbootstrap.dialogs import Querybox
-import ttkbootstrap as ttk
-from datetime import timedelta, datetime
-import time
-from tkinter import simpledialog, messagebox, Menu
-from ttkbootstrap import Style
 from PIL import ImageTk, Image
 from ctypes import windll
 import pyglet
+from ttkbootstrap.dialogs import Querybox
+import ttkbootstrap as ttk
 from ttkbootstrap.tooltip import ToolTip
 
 
@@ -35,11 +33,12 @@ def define_related_paths():
     base_path = CIIM_DIR_PATH
 
     paths = {
-        "delays": base_path / 'General Updates' / 'Delays+Cancelled works',
-        "faults": base_path / 'General Updates' / 'Fault Report Management' / 'Electrification Control Center Fault Report Management 2.0.xlsx',
-        "passdown": base_path / 'Pass Down',
-        "templates": base_path / 'Important doc' / 'Empty reports (templates)',
-        "procedure": base_path / 'Important Doc' / 'Protocols' / 'CIIM procedure test2.0.xlsx',
+        "delays": base_path / "General Updates" / "Delays+Cancelled works",
+        "faults": base_path / "General Updates" / "Fault Report Management" / "Electrification Control Center Fault "
+                                                                              "Report Management 2.0.xlsx",
+        "passdown": base_path / "Pass Down",
+        "templates": base_path / "Important doc" / "Empty reports (templates)",
+        "procedure": base_path / "Important Doc" / "Protocols" / "CIIM procedure test2.0.xlsx",
     }
 
     return paths
@@ -168,15 +167,15 @@ def get_filtered_team_leaders(construction_wp_worksheet, date):
     maxrow = construction_wp_worksheet.max_row
     team_leaders_list, tl_index = [], []
 
-    for i in range(3, maxrow):
-        cell_obj = construction_wp_worksheet.cell(row=i, column=4)
+    for index in range(3, maxrow):
+        cell_obj = construction_wp_worksheet.cell(row=index, column=4)
         if pd.Timestamp(cell_obj.value) == date:
-            tl_cell_value = construction_wp_worksheet.cell(row=i, column=13).value
+            tl_cell_value = construction_wp_worksheet.cell(row=index, column=13).value
             if tl_cell_value:
                 tl_name = re.sub("[-0123456789)(.]", "", str(tl_cell_value)).strip()
                 if tl_name not in TL_BLACKLIST:
                     team_leaders_list.append(tl_name)
-                    tl_index.append(i)
+                    tl_index.append(index)
 
     return team_leaders_list, tl_index
 
@@ -210,6 +209,7 @@ def dc_combo_selected(event):
 
     construction_wp_workbook.close()
 
+    # noinspection PyArgumentList
     dates_combobox.configure(bootstyle="default")
     dc_create_button.config(state=NORMAL)
     dc_create_all_button.config(state=NORMAL)
@@ -361,8 +361,6 @@ def create_delay_wb():
     # Handle Template Copy & Rename
     if dc_delay_report_path.exists():
         status_msg = f"Delay Report {dc_selected_team_leader} {dc_day_dir} already exists!\n{dc_day_path}"
-        # messagebox.showerror("Error", status_msg)
-        # print(status_msg)
         pass
         return False, status_msg  # Indicate failure and return
     else:
@@ -411,11 +409,13 @@ def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_index):
         (
             8,
             6,
-        ): f"{cp_ws.cell(row=int(team_leader_index), column=7).value} to {cp_ws.cell(row=int(team_leader_index), column=8).value}",
+        ): f"{cp_ws.cell(row=int(team_leader_index), column=7).value} to {cp_ws.cell(row=int(team_leader_index),
+                                                                                     column=8).value}",
         (
             8,
             4,
-        ): f"{cp_ws.cell(row=int(team_leader_index), column=9).value} - {cp_ws.cell(row=int(team_leader_index), column=10).value}",
+        ): f"{cp_ws.cell(row=int(team_leader_index), column=9).value} - "
+           f"{cp_ws.cell(row=int(team_leader_index), column=10).value}",
     }
     for (row, col), value in cells_to_fill.items():
         set_cell(delay_ws, row, col, value)
@@ -670,6 +670,7 @@ def get_delay_report_path_for_tl(team_leader):
     return delays_dir_path / f"{team_leader}.xlsx"
 
 
+# noinspection PyTypeChecker
 def dm_on_tl_listbox_rename(event):
     """
     Handle the event when a team leader name in the listbox is right double-clicked.
@@ -699,7 +700,9 @@ def dm_on_tl_listbox_rename(event):
     new_delay_report_path = construct_delay_report_path(new_team_leader_name)
     confirm = messagebox.askyesno(
         "Confirmation",
-        f"Old name : {team_leader_name}\nNew name : {new_delay_report_path.name[:-5]}\n\nAre you sure you want to rename?",
+        f"Old name : {team_leader_name}\n"
+        f"New name : {new_delay_report_path.name[:-5]}\n\n"
+        f"Are you sure you want to rename?"
     )
     if not confirm:
         return
@@ -1061,45 +1064,46 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings):
     return transferred_rows
 
 
-def confirm_transfer_cancelled():
+def transfer_cancelled_wrapper():
+    # --------------------- Logic Handling Functions ---------------------
+
     def on_cancel():
         top_level.destroy()
 
     def on_confirm():
 
-        cancelled_transferred = 0
-
         try:
-
             cancelled_transferred = transfer_data_to_cancelled(
                 construction_wp_path,
                 weekly_delay_path,
-                TO_WEEKLY_CANCELLED_MAPPING)
+                TO_CANCELLED_MAPPING)
 
             # Updated message to show how many rows were transferred
-            transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None else "No rows were transferred."
+            transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None \
+                else "No rows were transferred."
             messagebox.showinfo("Success", transferred_message)
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
         top_level.destroy()
 
+    # ------------------------- Main Function -------------------------
+
     messagebox.showwarning("Reminder", f"Make sure to fill first all the Cancelled works in the Construction plan!")
 
-    # weekly_delay_path = filedialog.askopenfilename(initialdir=CIIM_DIR_PATH)
-    #
-    # if not weekly_delay_path:
-    #     return
+    initial_dir = CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / str(datetime.now().year)
+    weekly_delay_path = filedialog.askopenfilename(initialdir=initial_dir)
+    weekly_delay_path = Path(weekly_delay_path)
 
-    weekly_delay_path = Path(
-        CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / '2023' / 'WW45' / 'Weekly Delay table WW45.xlsx')
+    if not weekly_delay_path:
+        return
 
     # Root
     top_level = ttk.Toplevel()
     top_level.withdraw()  # Hide the window initially
     top_level.title("Transfer Cancelled works")
     top_level.geometry('320x200')
-    top_level.resizable(0, 0)
+    top_level.resizable(False, False)
 
     # Center the top_level window
     center_window(top_level, top_level.master)
@@ -1208,7 +1212,7 @@ def transfer_delay_data(source_file, destination_file, mappings, dest_start_row=
     return transferred_rows
 
 
-def confirm_transfer_delay():
+def transfer_delay_wrapper():
     # ----------------------- Logic Handling Functions -----------------------
 
     def on_confirm():
@@ -1224,11 +1228,12 @@ def confirm_transfer_delay():
                 delay_transferred = transfer_delay_data(
                     daily_report_path,
                     weekly_delay_path,
-                    TO_WEEKLY_DELAY_MAPPINGS,
+                    TO_DELAY_MAPPINGS,
                     delay_int)
 
             # Updated message to show how many rows were transferred
-            transferred_message = f"{delay_transferred} rows transferred." if delay_transferred is not None else "No rows were transferred."
+            transferred_message = f"{delay_transferred} rows transferred." if delay_transferred is not None else ("No "
+                                                                                                                  "rows were transferred.")
             messagebox.showinfo("Success", transferred_message)
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
@@ -1252,7 +1257,8 @@ def confirm_transfer_delay():
         if are_files_locked(daily_report_path, weekly_delay_path):
             messagebox.showwarning(
                 "File Locked",
-                f"Please close the following Excel files before proceeding:\n{daily_report_path.name}\n{weekly_delay_path.name}",
+                f"Please close the following Excel files before proceeding:\n{daily_report_path.name}\n"
+                f"{weekly_delay_path.name}",
             )
             top_level.destroy()
             return
@@ -1291,7 +1297,7 @@ def confirm_transfer_delay():
     top_level.withdraw()  # Hide the window initially
     top_level.title("Transfer to Weekly")
     top_level.geometry('320x200')
-    top_level.resizable(0, 0)
+    top_level.resizable(False, False)
 
     # Center the top_level window
     center_window(top_level, top_level.master)
@@ -1487,7 +1493,8 @@ def derive_report_name(date, template="CIIM Report Table {}.xlsx"):
 def create_folders_for_entries(path, entry, prefix):
     """
     Create a set of folders based on the provided entry value.
-    Each folder will have a unique name prefixed by the given prefix and will contain subfolders named "Pictures" and "Worklogs".
+    Each folder will have a unique name prefixed by the given prefix and will contain subfolders named "Pictures" and
+    "Worklogs".
     """
 
     """Utility to create folders for the given prefix and entry."""
@@ -1977,7 +1984,7 @@ app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 # app.iconbitmap(bitmap='images/snake.ico')
 # app.iconbitmap(default='images/snake.ico')
 # ============================ Style ============================
-style = Style()
+style = ttk.Style()
 style.configure("TButton", font=("Roboto", 9, "bold"), )
 style.configure("success.Link.TButton", font=("Roboto", 9, "bold"), anchor=W)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
@@ -1998,7 +2005,7 @@ selected_date = ""
 team_leader_name = ""
 status_color = IntVar()
 previous_day_entry = IntVar()
-dc_day, dc_month, dc_week, dc_year = StringVar(), StringVar(), StringVar(), StringVar()
+dc_day, dc_month, dc_week, dc_year = "", "", "", ""
 start_time, end_time, reason_var, worker1_var, vehicle1_var = 0, 0, 0, 0, 0
 dc_selected_date = ""
 fc_selected_date = ""
@@ -2008,7 +2015,7 @@ cp_dates = []
 tl_index = []
 # Miscellaneous variables
 dc_selected_team_leader = ""
-tl_num = ""
+tl_num = 0
 delay_report_wb = ""
 frame4_workers_var = IntVar()
 frame4_vehicles_var = IntVar()
@@ -2065,7 +2072,7 @@ HEADER_TO_INDEX = {header: index for index, header in enumerate(CONSTRUCTION_WP_
 TO_DAILY_REPORT_MAPPINGS = {
     header: header for header in CONSTRUCTION_WP_HEADERS}
 
-TO_WEEKLY_DELAY_MAPPINGS = {
+TO_DELAY_MAPPINGS = {
     "WW [Nº]": "WW",
     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
     "Date [DD/MM/YY]": "Date",
@@ -2081,7 +2088,7 @@ TO_WEEKLY_DELAY_MAPPINGS = {
     "Number of workers": "Workers",
 }
 
-TO_WEEKLY_CANCELLED_MAPPING = {
+TO_CANCELLED_MAPPING = {
     "WW [Nº]": "WW",
     "Discipline [OCS/Old Bridges/TS/Scada]": "Discipline [OCS, Scada, TS]",
     "Date [DD/MM/YY]": "Date",
@@ -2223,14 +2230,14 @@ active_user_label.pack(side=LEFT)
 
 display_username = ttk.Label(user_frame, textvariable=username_var, bootstyle="info", font=("Roboto", 9, "bold"))
 display_username.pack(side=LEFT)
-display_username.bind("<Button-1>", lambda e: edit_username())
+display_username.bind("<Double-1>", lambda e: edit_username())
 ToolTip(display_username, text='Double-click to rename')
 
 # Packing the hour and day labels at the top first
 hour_label = ttk.Label(master=time_frame, text="12:49", font="digital-7 90")
 hour_label.pack()  # North/top alignment
 
-day_label = ttk.Label(master=time_frame, text="Saturday 22/01/2023", font="digital-7 30", style="secondary")
+day_label = ttk.Label(master=time_frame, text="Saturday 22/01/2023", font=("verdana", 20), style="secondary")
 day_label.pack(padx=5, pady=5)  # North/top alignment
 
 path_frame = ttk.Frame(master=tab1)
@@ -2271,7 +2278,7 @@ dist_button = ttk.Button(master=utilities_frame, text="Distribution List", comma
 dist_button.pack(fill='x', padx=5, pady=5)
 
 transfer_all_button = ttk.Button(master=utilities_frame, text="Transfer Cancelled ",
-                                 command=lambda: confirm_transfer_cancelled(),
+                                 command=lambda: transfer_cancelled_wrapper(),
                                  style="success.Link.TButton")
 transfer_all_button.pack(fill='x', padx=5, pady=5)
 
@@ -2348,16 +2355,21 @@ templates = {
                "\n\nFind attached the draft of the CIIM Report.",
     "Not Approved": "              Email (12:00):"
                     "\n\nHi Randall,"
-                    "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend (dd-dd.mm.yy)."
-                    "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in the file."
+                    "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the "
+                    "weekend (dd-dd.mm.yy)."
+                    "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in "
+                    "the file."
                     "\n\n\n           Whatsapp (16:00):"
-                    "\n\nGood afternoon everyone,\nAttached is the updated work file for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
-                    "\nPlease note that the hours listed are the starting hours of the T.P. Please keep in touch with your managers about the time you should be in the field."
+                    "\n\nGood afternoon everyone,\nAttached is the updated work file for tonight (dd.mm.yy) and "
+                    "tomorrow morning (dd.mm.yy)."
+                    "\nPlease note that the hours listed are the starting hours of the T.P. Please keep in touch with "
+                    "your managers about the time you should be in the field."
                     "\nGood luck."
                     "\n*TPs and supervisors in charge will be updated by ISR as soon as possible.*",
     "Approved": "      Email (17:00~20:00):"
                 "\n\nHi all,"
-                "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy) / the weekend  (dd-dd.mm.yy)."
+                "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning ("
+                "dd.mm.yy) / the weekend  (dd-dd.mm.yy)."
 }
 
 # Store the original content of the text widgets
@@ -2542,7 +2554,7 @@ save_button = ttk.Button(toolbar_frame, text="Save", command=save_delay_wb, stat
 save_button.pack(anchor="n", side=RIGHT, padx=10, pady=10)
 
 transfer_button_visible = False
-transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=confirm_transfer_delay,
+transfer_button = ttk.Button(toolbar_frame, text="Transfer", command=transfer_delay_wrapper,
                              width=10, style="info")
 
 # Bind the "End" key press event to enable_transfer_button
