@@ -1035,6 +1035,8 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings):
 
 
 def transfer_cancelled_wrapper(event):
+    global cancel_ww_delay_var
+
     # --------------------- Logic Handling Functions ---------------------
 
     def on_cancel():
@@ -1254,7 +1256,7 @@ def transfer_delay_wrapper():
         delay_input_label.config(text=f"Delay row: {delay_input}")
 
     # Function to update the state of the "Confirm" button based on the Entry widgets' content
-    def update_next_button_state():
+    def update_next_button_state(*args):
         delay_input = delay_entry.get().strip()
 
         if delay_input:
@@ -1914,7 +1916,7 @@ def copy_to_clipboard(event, text_widget):
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
-def open_precedure_file():
+def open_procedure_file():
     paths = define_related_paths()
     proc_path = paths["procedure"]
     os.startfile(proc_path)
@@ -2258,41 +2260,31 @@ path_entry = ttk.Entry(master=bottom_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
 # ====================== Tab 1 - Side Frame ======================
-side_frame = ttk.LabelFrame(master=tab1, text="utilities", bootstyle="info")
-side_frame.grid(row=0, column=1, rowspan=4, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
+side_frame = ttk.Frame(master=tab1)
+side_frame.grid(row=0, column=1, rowspan=4, sticky="nsew")
 
-open_wp_button = ttk.Button(master=side_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
-                            style="success.Link.TButton")
-open_wp_button.pack(fill='x', padx=5, pady=5)
-open_proc_button = ttk.Button(master=side_frame, text="Open Procedure", command=lambda: open_precedure_file(),
-                              style="success.Link.TButton")
-open_proc_button.pack(fill='x', padx=5, pady=5)
+files_mb = ttk.Menubutton(side_frame, text="Open file", bootstyle="secondary")
+files_mb.pack(fill='x', padx=5, pady=5)
 
-open_faults_button = ttk.Button(master=side_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
-                                style="success.Link.TButton")
-open_faults_button.pack(fill='x', padx=5, pady=5)
-open_passdown_button = ttk.Button(master=side_frame, text="Open Passdown ",
-                                  command=lambda: open_passdown(),
-                                  style="success.Link.TButton")
-open_passdown_button.pack(fill='x', padx=5, pady=5)
+files_menu = ttk.Menu(files_mb)
+
+files_menu.add_command(label="Construction Work Plan", command=open_wp_file)
+files_menu.add_command(label="Pass Down", command=open_passdown)
+files_menu.add_command(label="Electrification Control Center", command=open_faults)
+files_menu.add_command(label="Procedure", command=open_procedure_file)
+
+files_mb["menu"] = files_menu
 
 # Create Theme menu option
-theme_button = ttk.Menubutton(side_frame, text="Theme")
-theme_button.pack(fill='x', padx=5, pady=5, side='bottom')
+theme_mb = ttk.Menubutton(side_frame, text="Theme", bootstyle="secondary")
+theme_mb.pack(fill='x', padx=5, pady=5)
 
-theme_menu = ttk.Menu(theme_button)
-
-for theme_name in style.theme_names():
-    theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
-# Associates the inside menu with the menubutton
-theme_button["menu"] = theme_menu
-
-theme_menu = ttk.Menu(theme_button)
+theme_menu = ttk.Menu(theme_mb)
 
 for theme_name in style.theme_names():
     theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
 # Associates the inside menu with the menubutton
-theme_button["menu"] = theme_menu
+theme_mb["menu"] = theme_menu
 
 # ====================== Tab 1 -Phones frame ======================
 
