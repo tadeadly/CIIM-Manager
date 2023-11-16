@@ -53,7 +53,7 @@ def select_const_wp():
     """
     Opens a file dialog for the user to select an Excel file.
     """
-    global construction_wp_var, construction_wp_path
+    global construction_wp_var, construction_wp_path, cancel_wp_path, cancel_wp_var
     pattern = "WW*Construction Work Plan*.xlsx"
     path = filedialog.askopenfilename(filetypes=[("Excel Files", pattern)])
 
@@ -62,7 +62,7 @@ def select_const_wp():
         construction_wp_var.set(construction_wp_path.name)  # Set the StringVar to just the filename
         # After path has been set, update the dates
         update_dates_based_on_file()
-    # If no path was selected, simply do nothing (i.e., leave the entry as is)
+        # If no path was selected, simply do nothing (i.e., leave the entry as is)
 
     return construction_wp_path if path else None
 
@@ -429,16 +429,7 @@ def fill_delay_ws_cells(delay_ws, cp_ws, team_leader_index):
 def set_cell(wb_sheet, row, column, value, fill=None):
     """
     Set a specific cell's value and optionally its fill pattern in a workbook sheet.
-
-    Args:
-        wb_sheet: Target workbook sheet.
-        row (int): Row number of the cell.
-        column (int): Column number of the cell.
-        value: The value to be set for the cell.
-        fill (optional): Fill pattern for the cell.
     """
-
-    """Utility function to set cell values and, optionally, a fill pattern."""
     cell = wb_sheet.cell(row=row, column=column)
     cell.value = value
     if fill:
@@ -448,12 +439,6 @@ def set_cell(wb_sheet, row, column, value, fill=None):
 def copy_from_cp_to_delay(cp_ws, delay_ws, team_leader_num, day_folder):
     """
     Copy data from a construction plan worksheet to a delay worksheet.
-
-    Args:
-        cp_ws: Source construction plan worksheet.
-        delay_ws: Target delay worksheet.
-        team_leader_num (int): Index of the team leader to consider.
-        day_folder (str): String representation of the day folder.
     """
 
     mapping = {
@@ -488,7 +473,6 @@ def clear_cells():
     """
     Clear all the entry cells defined in the ENTRIES_CONFIG and reset related global variables.
     """
-
     global ENTRIES_CONFIG
 
     # Dynamically get the entries using their names
@@ -509,14 +493,7 @@ def clear_cells():
 def get_cell_mapping():
     """
     Generate a mapping of cell configurations based on the global ENTRIES_CONFIG.
-
-    Globals:
-        Uses ENTRIES_CONFIG to generate the mapping.
-
-    Returns:
-        dict: Mapping of widget configurations with row, column, and optional time_format details.
     """
-
     mapping = {}
     for entry_name, config in ENTRIES_CONFIG.items():
         mapping[globals()[entry_name]] = {
@@ -535,7 +512,7 @@ def load_delay_wb():
         If a workbook is already open, it closes it before loading a new one.
     """
 
-    global delay_report_wb, delay_report_path, delay_report_ws
+    global delay_report_wb, delay_report_path
 
     def insert_value(row, col, widget, time_format=False):
         cell_value = delay_report_ws.cell(row=row, column=col).value
@@ -891,12 +868,10 @@ def extract_date_from_path(path):
     """
     str_date = path.name  # The last component of the path (should be the date)
 
-    week_info = (
-        path.parent.name
-    )  # The second last component (should be 'Working Week Nxx')
+    week_info = path.parent.name
 
     # Extract week number from week_info
-    week_num = week_info.split("N")[-1]  # Assumes format 'Working Week Nxx'
+    week_num = week_info.split("N")[-1]
 
     # Convert the string date to a datetime object
     dt_date = datetime.strptime(str_date, "%d.%m.%y")
@@ -907,9 +882,6 @@ def extract_date_from_path(path):
 def extract_src_path_from_date(str_date, dt_date, week_num):
     """
     Constructs source file paths based on provided date information.
-
-    Returns:
-    - tuple: A tuple containing daily report path and weekly delay path.
     """
     paths, c_formatted_dates, p_formatted_dates = derive_paths_from_date(dt_date)
 
@@ -962,8 +934,6 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings):
     """
     Transfers data from a source file to a destination file based on column mappings provided.
     """
-    # Load the workbooks and worksheets in read_only mode for the source file
-
     src_wb = load_workbook(source_file, read_only=True)
     src_ws = src_wb["Const. Plan"]
 
@@ -1064,7 +1034,7 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings):
     return transferred_rows
 
 
-def transfer_cancelled_wrapper():
+def transfer_cancelled_wrapper(event):
     # --------------------- Logic Handling Functions ---------------------
 
     def on_cancel():
@@ -1075,9 +1045,11 @@ def transfer_cancelled_wrapper():
         try:
             cancelled_transferred = transfer_data_to_cancelled(
                 construction_wp_path,
-                weekly_delay_path,
-                TO_CANCELLED_MAPPING)
+                cancel_ww_delay_path,
+                TO_CANCELLED_MAPPING
+            )
 
+            top_level.destroy()
             # Updated message to show how many rows were transferred
             transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None \
                 else "No rows were transferred."
@@ -1085,24 +1057,30 @@ def transfer_cancelled_wrapper():
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
-        top_level.destroy()
+        destination_entry.delete(0, "end")
+
+    def cancel_select_ww_delay(event):
+        global cancel_ww_delay_path, cancel_ww_delay_var
+
+        initial_dir = CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / str(datetime.now().year)
+        path = filedialog.askopenfilename(initialdir=initial_dir)
+
+        if path:  # Check if a path was actually selected
+            cancel_ww_delay_path = Path(path)
+            cancel_ww_delay_var.set(cancel_ww_delay_path.name)  # Set the StringVar to just the filename
+            # If no path was selected, simply do nothing (i.e., leave the entry as is)
+
+        return cancel_ww_delay_path if path else None
 
     # ------------------------- Main Function -------------------------
 
-    messagebox.showwarning("Reminder", f"Make sure to fill first all the Cancelled works in the Construction plan!")
-
-    initial_dir = CIIM_DIR_PATH / 'General Updates' / 'Delays+Cancelled works' / str(datetime.now().year)
-    weekly_delay_path = filedialog.askopenfilename(initialdir=initial_dir)
-    weekly_delay_path = Path(weekly_delay_path)
-
-    if not weekly_delay_path:
-        return
+    # messagebox.showwarning("Reminder", f"Make sure to fill first all the Cancelled works in the Construction plan!")
 
     # Root
     top_level = ttk.Toplevel()
     top_level.withdraw()  # Hide the window initially
     top_level.title("Transfer Cancelled works")
-    top_level.geometry('320x200')
+    top_level.geometry('400x200')
     top_level.resizable(False, False)
 
     # Center the top_level window
@@ -1113,18 +1091,23 @@ def transfer_cancelled_wrapper():
     confirm_frame.pack(fill="both", expand=True)
 
     confirm_frame.grid_rowconfigure(0, weight=1)
-    confirm_frame.grid_rowconfigure(7, weight=1)
-    confirm_frame.grid_columnconfigure(4, weight=1)
+    confirm_frame.grid_rowconfigure(3, weight=1)
+    confirm_frame.grid_columnconfigure(3, weight=1)
 
-    source_label = ttk.Label(confirm_frame, text=f"SOURCE: {construction_wp_path.name}")
-    source_label.grid(row=1, column=0, columnspan=5, pady=10, padx=20, sticky="nsew")
+    source_label = ttk.Label(master=confirm_frame, text="Source")
+    source_label.grid(row=1, column=0, pady=10, padx=10, sticky="w")
+    source_entry = ttk.Entry(master=confirm_frame, textvariable=construction_wp_var, state="readonly")
+    source_entry.grid(row=1, column=1, columnspan=4, padx=5, pady=10, sticky="we")
 
-    destination_label = ttk.Label(confirm_frame, text=f"DESTINATION: {weekly_delay_path.name}")
-    destination_label.grid(row=2, column=0, columnspan=5, padx=20, pady=5, sticky="w")
+    destination_label = ttk.Label(confirm_frame, text="Destination")
+    destination_label.grid(row=2, column=0, padx=10, pady=5, sticky="w")
+    destination_entry = ttk.Entry(master=confirm_frame, textvariable=cancel_ww_delay_var)
+    destination_entry.grid(row=2, column=1, columnspan=4, padx=5, pady=10, sticky="we")
+    destination_entry.bind('<Button-1>', cancel_select_ww_delay)
 
     # Toolbar + Buttons
     toolbar_confirm_frame = ttk.Frame(master=confirm_frame)
-    toolbar_confirm_frame.grid(row=7, columnspan=5, sticky="nsew")
+    toolbar_confirm_frame.grid(row=3, columnspan=5, sticky="nsew")
 
     confirm_transfer_button = ttk.Button(toolbar_confirm_frame, text="Confirm", command=on_confirm, width=10)
     confirm_transfer_button.pack(side=RIGHT, anchor="se", padx=5, pady=10)
@@ -1271,7 +1254,7 @@ def transfer_delay_wrapper():
         delay_input_label.config(text=f"Delay row: {delay_input}")
 
     # Function to update the state of the "Confirm" button based on the Entry widgets' content
-    def update_next_button_state(*args):
+    def update_next_button_state():
         delay_input = delay_entry.get().strip()
 
         if delay_input:
@@ -1498,9 +1481,9 @@ def create_folders_for_entries(path, entry, prefix):
     """
 
     """Utility to create folders for the given prefix and entry."""
-    for i in range(int(entry.get() or 0)):
-        (path / f"{prefix}{i + 1}" / "Pictures").mkdir(parents=True, exist_ok=True)
-        (path / f"{prefix}{i + 1}" / "Worklogs").mkdir(parents=True, exist_ok=True)
+    for index in range(int(entry.get() or 0)):
+        (path / f"{prefix}{index + 1}" / "Pictures").mkdir(parents=True, exist_ok=True)
+        (path / f"{prefix}{index + 1}" / "Worklogs").mkdir(parents=True, exist_ok=True)
 
 
 def create_folders():
@@ -1818,7 +1801,7 @@ def update_edit_frame_based_on_tab_change(event):
                 frame4_reason_entry.config(style="default.TCombobox")
 
 
-def display_dist_list():
+def display_dist_list(event):
     show_frame("Dist list")
 
     paths = define_related_paths()
@@ -1840,7 +1823,6 @@ def display_dist_list():
                 # Highlight lines containing "cc" after inserting the text
 
                 highlight_lines_containing_cc(text_widget)
-
 
         except ValueError as e:
             messagebox.showerror("Error", f"Failed to read Excel file: {e}")
@@ -1895,7 +1877,7 @@ def highlight_lines_containing_cc(text_widget):
         start_index = f"{end_index}+1c"
 
 
-def display_phone_list():
+def display_phone_list(event):
     show_frame("Phones")
 
     # Ideally, you should also handle potential errors here, such as the file not existing.
@@ -1964,7 +1946,7 @@ def open_passdown():
 # ========================= Root config =========================
 pyglet.font.add_file('digital-7/digital-7.ttf')
 
-app = ttk.Window()
+app = Tk()
 windll.shcore.SetProcessDpiAwareness(1)
 app.resizable(0, 0)
 app.title("Smart CIIM")
@@ -1993,7 +1975,11 @@ style.configure("TMenubutton", font=("Roboto", 9, "bold"))
 username_var = StringVar()
 username = ""
 current_frame = None
-# A global variable to keep track of whether the text widgets have been created
+# Transfer cancelled variables
+cancel_wp_path = Path("/")
+cancel_wp_var = StringVar()
+cancel_ww_delay_path = Path("/")
+cancel_ww_delay_var = StringVar()
 # Paths
 CIIM_DIR_PATH = Path("/")
 delays_dir_path = Path("/")
@@ -2151,6 +2137,9 @@ frames = {
 login_frame = frames["Login"]
 bg = ImageTk.PhotoImage(file='images/background.png')
 login_button_img = ImageTk.PhotoImage(file='images/button_img.png')
+phones_btn_img = ImageTk.PhotoImage(file='images/phonebook.png')
+dist_btn_img = ImageTk.PhotoImage(file='images/email.png')
+transfer_btn_img = ImageTk.PhotoImage(file='images/transfer.png')
 
 # Show image
 label1 = Label(master=login_frame, image=bg)
@@ -2164,8 +2153,8 @@ username_entry.place(x=210, y=170)
 path_entry = ttk.Entry(master=login_frame, textvariable=construction_wp_var,
                        width=50, font=("Roboto", 11, "bold"), style="light")
 path_entry.place(x=210, y=288)
-path_entry.bind('<Button-1>', open_const_wp)
-username_entry.bind('<Tab>', open_const_wp)
+path_entry.bind("<Button-1>", open_const_wp)
+username_entry.bind("<Tab>", open_const_wp)
 
 login_button = ttk.Button(
     master=login_frame,
@@ -2219,8 +2208,9 @@ tab1.columnconfigure(1, weight=0)
 tab1.rowconfigure(1, weight=1)
 tab1.rowconfigure(2, weight=1)
 
-time_frame = ttk.Frame(master=tab1)
-time_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+# ====================== Tab 1 - Top Frame ======================
+top_frame = ttk.Frame(master=tab1)
+top_frame.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
 
 # Then, packing the user-related labels at the bottom
 user_frame = ttk.Frame(master=tab1)
@@ -2234,57 +2224,68 @@ display_username.bind("<Double-1>", lambda e: edit_username())
 ToolTip(display_username, text='Double-click to rename')
 
 # Packing the hour and day labels at the top first
-hour_label = ttk.Label(master=time_frame, text="12:49", font="digital-7 90")
+hour_label = ttk.Label(master=top_frame, text="12:49", font="digital-7 100")
 hour_label.pack()  # North/top alignment
 
-day_label = ttk.Label(master=time_frame, text="Saturday 22/01/2023", font=("verdana", 20), style="secondary")
-day_label.pack(padx=5, pady=5)  # North/top alignment
+day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font=("Helvetica", 18, "bold"), style="secondary")
+day_label.pack(padx=5, pady=5)
 
-path_frame = ttk.Frame(master=tab1)
-path_frame.grid(row=2, column=0, sticky='nsew', padx=5, pady=5)
+# ====================== Tab 1 - Mid Frame ======================
+mid_frame = ttk.Frame(master=tab1)
+mid_frame.grid(row=2, column=0, padx=5, pady=5)
 
-home_browse_button = ttk.Button(master=path_frame, text='Change file', command=select_const_wp, bootstyle='secondary',
+phones_button = ttk.Label(master=mid_frame, text="Phone numbers", image=phones_btn_img, compound="top")
+phones_button.pack(side=LEFT, padx=25, pady=5)
+phones_button.bind("<Button-1>", display_phone_list)
+
+dist_button = ttk.Label(master=mid_frame, text="Distribution List", image=dist_btn_img, compound="top")
+dist_button.pack(side=LEFT, padx=25, pady=5)
+dist_button.bind("<Button-1>", display_dist_list)
+
+transfer_all_button = ttk.Label(master=mid_frame, text="Transfer Cancelled ", image=transfer_btn_img, compound="top")
+transfer_all_button.pack(side=LEFT, padx=25, pady=5, anchor="w")
+transfer_all_button.bind("<Button-1>", transfer_cancelled_wrapper)
+
+# ====================== Tab 1 - Bottom Frame ======================
+bottom_frame = ttk.Frame(master=tab1)
+bottom_frame.grid(row=3, column=0, sticky='nsew', padx=5, pady=5)
+
+home_browse_button = ttk.Button(master=bottom_frame, text="Change file", command=select_const_wp, bootstyle="secondary",
                                 width=10)
 home_browse_button.pack(anchor='sw', side='left', pady=5)
 
-path_entry = ttk.Entry(master=path_frame, textvariable=construction_wp_var)
+path_entry = ttk.Entry(master=bottom_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
-utilities_frame = ttk.Frame(master=tab1)
-utilities_frame.grid(row=0, column=1, rowspan=3, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
+# ====================== Tab 1 - Side Frame ======================
+side_frame = ttk.LabelFrame(master=tab1, text="utilities", bootstyle="info")
+side_frame.grid(row=0, column=1, rowspan=4, sticky="nsew", padx=5, pady=5)  # Adjust grid placement as needed
 
-# Utilities
-open_wp_button = ttk.Button(master=utilities_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
+open_wp_button = ttk.Button(master=side_frame, text="Open Construction Plan", command=lambda: open_wp_file(),
                             style="success.Link.TButton")
 open_wp_button.pack(fill='x', padx=5, pady=5)
-open_proc_button = ttk.Button(master=utilities_frame, text="Open Procedure", command=lambda: open_precedure_file(),
+open_proc_button = ttk.Button(master=side_frame, text="Open Procedure", command=lambda: open_precedure_file(),
                               style="success.Link.TButton")
 open_proc_button.pack(fill='x', padx=5, pady=5)
 
-open_faults_button = ttk.Button(master=utilities_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
+open_faults_button = ttk.Button(master=side_frame, text="Open Ele. Control Center ", command=lambda: open_faults(),
                                 style="success.Link.TButton")
 open_faults_button.pack(fill='x', padx=5, pady=5)
-open_passdown_button = ttk.Button(master=utilities_frame, text="Open Passdown ",
+open_passdown_button = ttk.Button(master=side_frame, text="Open Passdown ",
                                   command=lambda: open_passdown(),
                                   style="success.Link.TButton")
 open_passdown_button.pack(fill='x', padx=5, pady=5)
 
-phones_button = ttk.Button(master=utilities_frame, text="Phone numbers", command=lambda: display_phone_list(),
-                           bootstyle='link.success')
-phones_button.pack(fill='x', padx=5, pady=5)
-
-dist_button = ttk.Button(master=utilities_frame, text="Distribution List", command=lambda: display_dist_list(),
-                         style='success.Link.TButton')
-dist_button.pack(fill='x', padx=5, pady=5)
-
-transfer_all_button = ttk.Button(master=utilities_frame, text="Transfer Cancelled ",
-                                 command=lambda: transfer_cancelled_wrapper(),
-                                 style="success.Link.TButton")
-transfer_all_button.pack(fill='x', padx=5, pady=5)
-
 # Create Theme menu option
-theme_button = ttk.Menubutton(utilities_frame, text="Theme")
+theme_button = ttk.Menubutton(side_frame, text="Theme")
 theme_button.pack(fill='x', padx=5, pady=5, side='bottom')
+
+theme_menu = ttk.Menu(theme_button)
+
+for theme_name in style.theme_names():
+    theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
+# Associates the inside menu with the menubutton
+theme_button["menu"] = theme_menu
 
 theme_menu = ttk.Menu(theme_button)
 
