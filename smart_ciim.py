@@ -5,7 +5,7 @@ import time
 from datetime import timedelta, datetime
 from pathlib import Path
 from tkinter import *
-from tkinter import filedialog, simpledialog, messagebox, Menu, font
+from tkinter import filedialog, simpledialog, messagebox, Menu
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -234,7 +234,7 @@ def initialize_progress_bar_window(title, max_value):
     """
     Initialize and show a progress bar window.
     """
-    progress_win = ttk.Toplevel()
+    progress_win = ttk.Toplevel(topmost=YES)
     progress_win.withdraw()
     progress_win.place_window_center()
     progress_win.deiconify()
@@ -885,7 +885,7 @@ def extract_date_from_cb():
     formatted_str_date = dt_date.strftime("%d.%m.%y")
 
     # Extract week number from the datetime object
-    week_num = dt_date.isocalendar()[1]
+    week_num = dt_date.strftime("%U")
 
     print(formatted_str_date, dt_date, week_num)
 
@@ -1056,6 +1056,11 @@ def transfer_cancelled_wrapper():
         top_level.destroy()
 
     def on_confirm():
+
+        messagebox.showwarning("Warning",
+                               "Please note that if TL appears in more than 1 cancelled work in the same date, "
+                               "the program will only transfer the first work."
+                               "\nKeep in mind and double check at the end!")
 
         try:
             cancelled_transferred = transfer_data_to_cancelled(
@@ -1673,46 +1678,29 @@ def write_data_to_previous_report(
     )
 
 
-def is_dark_theme(theme):
-    # Define what constitutes a dark theme
-    dark_themes = ['darkly', 'superhero', 'cyborg', 'solar', 'vapor']
-    return theme in dark_themes
-
-
 def toggle_theme():
-    widget_list = [side_frame, tab1_button, tab2_button, tab3_button, tab4_button, phone_button,
-                   distlist_button]
-
     if theme_var.get() == 0:
-
+        style.theme_use('litera')
         style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
         style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-        tab1_empty.configure(bootstyle="inverse.primary")
-        for widget in widget_list:
-            widget.configure(bootstyle="primary")
-        style.theme_use('litera')
+
 
     else:
-
+        style.theme_use('superhero')
         style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
         style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-        tab1_empty.configure(bootstyle="inverse.dark")
-        for widget in widget_list:
-            widget.configure(bootstyle="dark")
-        style.theme_use('darkly')
-
-
-# def change_theme():
-#     """Changes the theme of the app to the selected theme."""
-#     current_theme = theme_var.get()
-#     style.theme_use(current_theme)  # Set the theme
-#     style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
-#     style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-#     print(current_theme)
 
 
 def show_frame(frame_name):
     global current_frame
+
+    # Hide the side bar and toggle button if the current frame is "Login"
+    if frame_name == "Login":
+        side_frame.pack_forget()  # Hide the side bar
+        toggle_btn.pack_forget()  # Hide the toggle button
+    else:
+        side_frame.pack(side=LEFT, fill=Y)  # Show the side bar
+        toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)  # Show the toggle button
 
     for name, frame in frames.items():
         frame.pack_forget()
@@ -1744,23 +1732,9 @@ def show_context_menu(event):
         context_menu.post(event.x_root, event.y_root)
 
 
-def edit_username():
-    # Get the current username
-    current_username = username_var.get()
-
-    # Ask the user for a new username using a simple dialog
-    new_username = simpledialog.askstring(parent=tab1, title="Edit Username", prompt="Enter new username:",
-                                          initialvalue=current_username)
-
-    # If the user provides a new username (i.e., didn't cancel the dialog), update the username_var
-    if new_username is not None:
-        username_var.set(new_username)
-
-
-# TODO : XX
-def show_notebook(frame_name):
+def show_home():
     if construction_wp_var.get() != "" and username_var.get() != "":
-        show_frame(frame_name)
+        show_frame("Home")
     else:
         messagebox.showerror(title="Error", message="Please fill your name and the construction work plan")
 
@@ -1772,7 +1746,7 @@ def update_edit_frame_based_on_tab_change(event):
     selected_tab_index = event.widget.index("current")
 
     # Checking whenever the tab is not "Edit"
-    if not selected_tab_index == 4:
+    if not current_frame == "Home":
         # Check if the listbox has any selected item
         tl_name_selected.config(text="None")
         clear_cells()
@@ -1952,7 +1926,7 @@ def open_ww_delay():
 
 
 def open_options_window():
-    top_level = ttk.Toplevel()
+    top_level = ttk.Toplevel(topmost=YES)
     top_level.withdraw()  # Hide the window initially
     top_level.title("Transfer Data")
     top_level.geometry('360x200')
@@ -1968,22 +1942,36 @@ def open_options_window():
     transfer_frame.rowconfigure(0, weight=1)
     transfer_frame.columnconfigure(0, weight=1)
 
-    transfer_top_frame = ttk.LabelFrame(master=transfer_frame)
-    transfer_top_frame.grid(row=0, column=0, sticky="nsew")  # Correctly placed in the grid
+    transfer_top_frame = ttk.Frame(master=transfer_frame)
+    transfer_top_frame.grid(row=0, column=0, sticky="nsew")
 
     transfer_toolbar = ttk.Frame(master=transfer_frame)
-    transfer_toolbar.grid(row=1, column=0, sticky="nsew")  # Correctly placed below the top frame
+    transfer_toolbar.grid(row=1, column=0, sticky="nsew")
 
-    ttk.Label(transfer_top_frame, text="Select to which Sheet you want to transfer", anchor=CENTER).pack(pady=20)
+    ttk.Label(transfer_top_frame, text="Select to which Sheet you want to transfer", anchor=CENTER).pack(pady=35)
 
-    ttk.Button(transfer_toolbar, text="Delays", command=transfer_delay_wrapper, width=10).pack(side=RIGHT, padx=10,
-                                                                                               pady=10)
-    ttk.Button(transfer_toolbar, text="Cancelled", command=transfer_cancelled_wrapper, width=10).pack(side=RIGHT,
-                                                                                                      padx=10,
-                                                                                                      pady=10)
-    ttk.Button(transfer_toolbar, text="Cancel", command=transfer_top_level.destroy, width=10,
-               bootstyle="secondary").pack(side=RIGHT, padx=10,
+    seperator = ttk.Separator(transfer_toolbar)
+    seperator.pack(fill=X)
+    delay_button = ttk.Button(transfer_toolbar, text="Delays", command=transfer_delay_wrapper, width=8)
+    delay_button.pack(side=RIGHT, padx=5, pady=10)
+    cancelled_button = ttk.Button(transfer_toolbar, text="Cancelled", command=transfer_cancelled_wrapper, width=8)
+    cancelled_button.pack(side=RIGHT, padx=5, pady=10)
+    ttk.Button(transfer_toolbar, text="Cancel", width=8,
+               bootstyle="secondary").pack(side=RIGHT, padx=5,
                                            pady=10)
+
+    # Binding function
+    def on_button_click(event):
+        button = event.widget
+        if button == delay_button:
+            transfer_delay_wrapper()
+        elif button == cancelled_button:
+            transfer_cancelled_wrapper()
+        top_level.destroy()
+
+    # Bind all children of transfer_toolbar to on_button_click
+    for child in transfer_toolbar.winfo_children():
+        child.bind("<Button-1>", on_button_click)
 
 
 # ========================= Root config =========================
@@ -2197,28 +2185,28 @@ login_button_img = ImageTk.PhotoImage(file='images/button_img.png')
 
 # Show image
 label1 = Label(master=login_frame, image=bg)
-label1.place(x=0, y=0)
+label1.place(x=30, y=0)
 
 username_entry = ttk.Entry(master=login_frame, textvariable=username_var, width=50, font=("Roboto", 11, "bold"),
                            style="light"
                            )
-username_entry.place(x=210, y=170)
+username_entry.place(x=210, y=175)
 username_entry_val = add_text_validation(username_entry, when="key")
 username_entry.config(validatecommand=username_entry_val)
 
 path_entry = ttk.Entry(master=login_frame, textvariable=construction_wp_var,
                        width=50, font=("Roboto", 11, "bold"), style="light")
-path_entry.place(x=210, y=288)
+path_entry.place(x=210, y=290)
 path_entry.bind("<Button-1>", open_const_wp)
 username_entry.bind("<Tab>", open_const_wp)
 
 login_button = ttk.Button(
     master=login_frame,
-    command=lambda: show_notebook("Notebook"),
+    command=lambda: show_home(),
     image=login_button_img, style="light", takefocus=False
 
 )
-login_button.place(x=250, y=380)
+login_button.place(x=280, y=380)
 
 # ====================== Images ======================
 
@@ -2231,6 +2219,7 @@ images_dict = {
     "Phone": 'images/icons8-phone-contact-24.png',
     "Dist list": 'images/icons8-mail-24.png',
     "Extras": 'images/icons8-settings-24(1).png',
+    "Transfer": 'images/icons8-transfer-24.png'
 }
 
 photo_images = {}  # Dictionary to store the PhotoImage objects
@@ -2256,75 +2245,44 @@ for key, path in images_dict.items():
 # exit_button.pack(side=RIGHT)
 
 # ====================== Side Frame ======================
-side_frame = ttk.Frame(master=app, bootstyle="primary")
+side_frame = ttk.Frame(master=app, bootstyle="dark")
 side_frame.pack(side=LEFT, fill=Y)
 
-tab1_empty = ttk.Label(master=side_frame, bootstyle="inverse.primary")
-tab1_empty.pack(fill='x', pady=40)
+tab1_empty = ttk.Label(master=side_frame, bootstyle="inverse.dark")
+tab1_empty.pack(fill='x', pady=35)
 
-tab1_button = ttk.Button(master=side_frame, command=lambda: show_frame("Home"), bootstyle="primary",
+tab1_button = ttk.Button(master=side_frame, command=lambda: show_frame("Home"), bootstyle="dark",
                          image=photo_images["Home"], takefocus=False)
 tab1_button.pack(fill='x', ipady=7)
 
-tab2_button = ttk.Button(master=side_frame, command=lambda: show_frame("File"), bootstyle="primary",
+tab2_button = ttk.Button(master=side_frame, command=lambda: show_frame("File"), bootstyle="dark",
                          image=photo_images["File"], takefocus=False)
 tab2_button.pack(fill='x', ipady=7)
 
 tab3_button = ttk.Button(master=side_frame, command=lambda: show_frame("Folder"),
-                         bootstyle="primary",
+                         bootstyle="dark",
                          image=photo_images["Folder"], takefocus=False)
 tab3_button.pack(fill='x', ipady=7)
 
-tab4_button = ttk.Button(master=side_frame, command=lambda: show_frame("Edit"), bootstyle="primary",
+tab4_button = ttk.Button(master=side_frame, command=lambda: show_frame("Edit"), bootstyle="dark",
                          image=photo_images["Edit"], takefocus=False)
 tab4_button.pack(fill='x', ipady=7)
-phone_button = ttk.Button(master=side_frame, text="Phones", command=lambda: display_phone_list(),
-                          bootstyle="primary",
-                          image=photo_images["Phone"], takefocus=False)
-phone_button.pack(fill='x', ipady=7)
 distlist_button = ttk.Button(master=side_frame, command=lambda: display_dist_list(),
-                             bootstyle="primary",
+                             bootstyle="dark",
                              image=photo_images["Dist list"], takefocus=False)
 distlist_button.pack(fill='x', ipady=7)
+phone_button = ttk.Button(master=side_frame, text="Phones", command=lambda: display_phone_list(),
+                          bootstyle="dark",
+                          image=photo_images["Phone"], takefocus=False)
+phone_button.pack(fill='x', ipady=7)
 
-# Create the "Extras" Menubutton
-extras_mb = ttk.Menubutton(side_frame, bootstyle="primary", image=photo_images["Extras"], takefocus=False)
-extras_mb.pack(fill='x', ipady=7)
-
-# Create the menu for "Extras"
-extras_menu = ttk.Menu(extras_mb)
-
-# Create "Launch File" sub-menu and add items
-files_menu = ttk.Menu(extras_menu)
-files_menu.add_command(label="Construction Work Plan", command=open_wp_file)
-files_menu.add_command(label="Weekly Delay Table", command=open_ww_delay)
-files_menu.add_command(label="Pass Down", command=open_passdown)
-files_menu.add_command(label="Electrification Control Center", command=open_faults)
-files_menu.add_command(label="Procedure", command=open_procedure_file)
-
-# Create "Transfer Data" sub-menu and add items
-transfer_menu = ttk.Menu(extras_menu)
-transfer_menu.add_command(label="Weekly Delay table (Delay)", command=transfer_delay_wrapper)
-transfer_menu.add_command(label="Weekly Delay table (Cancelled)", command=transfer_cancelled_wrapper)
-
-# # Create "Theme" sub-menu and add items
-# theme_menu = ttk.Menu(extras_menu)
-# for theme_name in style.theme_names():
-#     theme_menu.add_radiobutton(label=theme_name, variable=theme_var, command=change_theme)
-
-# Add sub-menus as cascades to the "Extras" menu
-extras_menu.add_cascade(label="Launch", menu=files_menu)
-extras_menu.add_cascade(label="Transfer to...", menu=transfer_menu)
-# extras_menu.add_cascade(label="Appearance", menu=theme_menu)
-
-# Associate the "Extras" menu with the "Extras" Menubutton
-extras_mb["menu"] = extras_menu
-
-transfer_top_level = ttk.Button(side_frame, text="Transfer Works", command=open_options_window)
-transfer_top_level.pack(fill='x', ipady=7)
+transfer_button = ttk.Button(side_frame, text="Transfer Works", command=open_options_window,
+                             image=photo_images["Transfer"], bootstyle="dark")
+transfer_button.pack(fill='x', ipady=7)
 
 toggle_btn = ttk.Checkbutton(app, text='Dark Mode', variable=theme_var, onvalue=1,
-                             offvalue=0, command=toggle_theme, bootstyle="success-round-toggle")
+                             offvalue=0, command=toggle_theme, style="success.RoundToggle"
+                             )  # bootstyle="success-round-toggle"
 toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)
 
 # ====================== Tab 1 - Home ======================
@@ -2334,37 +2292,27 @@ tab1.columnconfigure(1, weight=1)
 tab1.rowconfigure(1, weight=1)
 
 # ====================== Tab 1 - Top Frame ======================
-top_frame = ttk.LabelFrame(master=tab1)
+top_frame = ttk.Frame(master=tab1)
 top_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
-
-# user_frame = ttk.Frame(master=tab1)
-# user_frame.grid(row=0, column=1, pady=5)
-# active_user_label = ttk.Label(user_frame, text="Active :", font=("roboto", 9, "bold"))
-# active_user_label.pack(side=LEFT)
-#
-# display_username = ttk.Label(user_frame, textvariable=username_var, bootstyle="info", font=("Roboto", 9, "bold"))
-# display_username.pack(side=LEFT)
-# display_username.bind("<Double-1>", lambda e: edit_username())
-# ToolTip(display_username, text='Double-click to rename')
 
 # Packing the hour and day labels at the top first
 hour_label = ttk.Label(master=top_frame, text="12:49", font="digital-7 120")
-hour_label.pack()  # North/top alignment
+hour_label.pack(anchor="center")
 
-day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font=("Roboto", 20, "bold"), style="secondary")
+day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font=("Roboto", 19, "bold"), style="secondary")
 day_label.pack(padx=5, pady=5)
 
 # ====================== Tab 1 - Bottom Frame ======================
 bottom_frame = ttk.Frame(master=tab1)
 bottom_frame.grid(row=2, column=1, sticky='nsew', padx=5, pady=5)
 
-home_browse_button = ttk.Button(master=bottom_frame, text="Change File", command=select_const_wp, width=12,
+home_browse_button = ttk.Button(master=bottom_frame, text="Change", command=select_const_wp, width=12,
                                 takefocus=False, bootstyle="secondary")
 home_browse_button.pack(anchor='sw', side='left', pady=5)
 
 # Open files menu
-open_mb = ttk.Menubutton(top_frame, text="Open file", bootstyle="success.Outline", width=15)
-open_mb.pack(pady=30)
+open_mb = ttk.Menubutton(top_frame, text="Open file", bootstyle="success", width=10)
+open_mb.pack(pady=50)
 
 open_menu = ttk.Menu(open_mb)
 
@@ -2403,12 +2351,6 @@ foreman_list.config(cursor="hand2")
 
 ToolTip(tl_phones_list, "Click to Copy", delay=500)
 ToolTip(foreman_list, "Click to Copy", delay=500)
-
-# # Back button
-# phone_back_button = ttk.Button(master=phones_frame, text="< Back", command=lambda: show_frame("Home"), width=10,
-#                                bootstyle="secondary", takefocus=False)
-
-# phone_back_button.grid(row=0, columnspan=6, padx=10, pady=10, sticky="w")
 
 # Bindings
 tl_phones_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, tl_phones_list))
@@ -2473,11 +2415,6 @@ for column, (label_text, template) in enumerate(templates.items()):
     text_widget.grid(row=2, column=column, sticky="nsew", padx=2)
     ToolTip(button, text="Click for template", delay=600)
 
-# # Back button
-# dist_back_button = ttk.Button(master=dist_frame, text="< Back", command=lambda: show_frame("Home"), width=10,
-#                               bootstyle="secondary")
-# dist_back_button.grid(row=0, columnspan=4, padx=10, pady=10, sticky="w")
-
 # ====================== Tab 2 - File ======================
 
 tab2.rowconfigure(0, weight=1)
@@ -2489,7 +2426,7 @@ tab2_mid_frame.grid(row=0, column=1, sticky="nsew")
 
 tab2_mid_frame.rowconfigure(1, weight=1)
 
-dc_select_date_label = ttk.Label(master=tab2_mid_frame, text="   Select date:  ", )
+dc_select_date_label = ttk.Label(master=tab2_mid_frame, text="   Select date:  ")
 dc_select_date_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
 dates_cb = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list)
 dates_cb.set("Date")
@@ -2526,7 +2463,7 @@ tab3_mid_frame = ttk.Frame(master=tab3)
 tab3_mid_frame.grid(row=0, column=1, sticky='nsew')
 
 select_folder_label = ttk.Label(master=tab3_mid_frame, text="   Select date:  ")
-select_folder_label.grid(row=0, column=0, padx=5, pady=34, sticky="e")
+select_folder_label.grid(row=0, column=0, padx=5, pady=43, sticky="e")
 
 cal_entry = ttk.DateEntry(tab3_mid_frame, bootstyle="danger", dateformat="%Y-%m-%d")
 cal_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
@@ -2566,16 +2503,16 @@ tab4.columnconfigure(1, weight=1)
 # Date Select
 menu3_frame1 = ttk.Frame(master=tab4)
 menu3_frame1.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
-dc_select_date_label = ttk.Label(menu3_frame1, text="   Select date:  ")
+dc_select_date_label = ttk.Label(menu3_frame1, text="  Select date: ")
 dc_select_date_label.pack(side="left")
-dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list)
+dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, width=15)
 dm_dates_cb.set("Date")
 dm_dates_cb.bind("<<ComboboxSelected>>", dm_combo_selected)
-dm_dates_cb.pack(side="left")
+dm_dates_cb.pack(side="left", padx=15)
 
 # Team Leaders Listbox
 menu3_frame2 = ttk.Frame(master=tab4)
-menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=5, pady=5)
+menu3_frame2.grid(row=1, column=0, sticky="nsew", padx=15, pady=5)
 dm_tl_listbox = Listbox(menu3_frame2, border=5)
 
 dm_tl_listbox.pack(side=LEFT, fill=BOTH, expand=True)
@@ -2593,8 +2530,6 @@ context_menu.add_command(label="Delete", command=lambda: dm_on_tl_listbox_delete
 dm_tl_listbox.bind("<Button-3>", show_context_menu)
 dm_tl_listbox.bind("<Delete>", dm_on_tl_listbox_delete)
 
-# # It will clear the cells and update the listbox when changing to another tab
-# my_notebook.bind("<<NotebookTabChanged>>", update_edit_frame_based_on_tab_change) # TODO: x
 # Frame 3 - Name + Status
 menu3_frame3 = ttk.LabelFrame(master=tab4, text="Information", labelanchor="n", style="info")
 menu3_frame3.grid(row=0, column=1, sticky="nsew", padx=10, pady=5)
@@ -2647,7 +2582,7 @@ for i, entry_name in enumerate(WORKER_ENTRIES, start=4):
     globals()[entry_name].grid(row=i, column=1, sticky="w", pady=2)
 
 # Vehicles
-ttk.Label(menu3_frame4, text="Vehicles").grid(row=4, column=2, padx=5, sticky="e")
+ttk.Label(menu3_frame4, text="Vehicle").grid(row=4, column=2, padx=5, sticky="e")
 v1_entry = ttk.Entry(menu3_frame4)
 v1_entry.grid(row=4, column=3, sticky="e")
 
