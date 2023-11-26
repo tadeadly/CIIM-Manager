@@ -15,8 +15,6 @@ import ttkbootstrap as ttk
 from ttkbootstrap.tooltip import ToolTip
 from ttkbootstrap.utility import enable_high_dpi_awareness
 from ttkbootstrap.validation import add_numeric_validation, add_text_validation, add_regex_validation
-from ctypes import windll
-from ttkbootstrap.dialogs.dialogs import FontDialog
 
 
 def define_related_paths():
@@ -1681,25 +1679,29 @@ def write_data_to_previous_report(
 def toggle_theme():
     if theme_var.get() == 0:
         style.theme_use('litera')
-        style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
-        style.configure("TMenubutton", font=("Roboto", 9, "bold"))
 
 
     else:
         style.theme_use('superhero')
         style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
         style.configure("TMenubutton", font=("Roboto", 9, "bold"))
+        style.configure("Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+        style.configure("Treeview", rowheight=20)
 
 
 def show_frame(frame_name):
     global current_frame
 
-    # Hide the side bar and toggle button if the current frame is "Login"
+    # Refreshes "Edit" Frame if changing a frame
+    if frame_name != "Edit" and current_frame == "Edit":
+        update_edit_frame_based_on_frame_change()
+
+    # Hide the sidebar and toggle button if the current frame is "Login"
     if frame_name == "Login":
-        side_frame.pack_forget()  # Hide the side bar
+        side_frame.pack_forget()  # Hide the sidebar
         toggle_btn.pack_forget()  # Hide the toggle button
     else:
-        side_frame.pack(side=LEFT, fill=Y)  # Show the side bar
+        side_frame.pack(side=LEFT, fill=Y)  # Show the sidebar
         toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)  # Show the toggle button
 
     for name, frame in frames.items():
@@ -1739,26 +1741,22 @@ def show_home():
         messagebox.showerror(title="Error", message="Please fill your name and the construction work plan")
 
 
-def update_edit_frame_based_on_tab_change(event):
+def update_edit_frame_based_on_frame_change():
     """
-    Resets the cells and the entries if tab is changed
+    Resets the cells and the entries if frame is changed
     """
-    selected_tab_index = event.widget.index("current")
 
-    # Checking whenever the tab is not "Edit"
-    if not current_frame == "Home":
-        # Check if the listbox has any selected item
-        tl_name_selected.config(text="None")
-        clear_cells()
-        line_status()
-        populate_listbox()
+    tl_name_selected.config(text="None")
+    clear_cells()
+    line_status()
+    populate_listbox()
 
-        for entry_name in ENTRIES_CONFIG.keys():
-            entry = globals()[entry_name]
-            if not entry == frame4_reason_entry:
-                entry.config(style="default.TEntry")
-            else:
-                frame4_reason_entry.config(style="default.TCombobox")
+    for entry_name in ENTRIES_CONFIG.keys():
+        entry = globals()[entry_name]
+        if not entry == frame4_reason_entry:
+            entry.config(style="default.TEntry")
+        else:
+            frame4_reason_entry.config(style="default.TCombobox")
 
 
 def display_dist_list():
@@ -1838,38 +1836,59 @@ def highlight_lines_containing_cc(text_widget):
 
 
 def display_phone_list():
+    global is_tree_populated
+
     show_frame("Phone")
+    # Read the Excel file
 
-    # Ideally, you should also handle potential errors here, such as the file not existing.
-    phones_df = pd.read_csv('names.csv')
+    if not is_tree_populated:
 
-    team_leader_phones = phones_df["Team Leader Name"]
-    foreman_phones = phones_df['Foreman Name']
+        tree.heading("#0", text="Phone Numbers")
 
-    # Convert the series to a single string with line breaks, excluding NaN values.
-    tl_phones_str = "\n".join(team_leader_phones.dropna().astype(str))
-    foreman_phones_str = "\n".join(foreman_phones.dropna().astype(str))
+        df = pd.read_excel(construction_wp_path, sheet_name="SEMI List", usecols="B:F, H")
 
-    # Update the contents of the Text widgets.
-    tl_phones_list.delete("1.0", "end")
-    tl_phones_list.insert("end", tl_phones_str)
+        # Populate "Team Leaders" from DataFrame
+        for department in organization["Team Leaders"]:
+            if department in df:
+                workers = df[department].dropna().tolist()
+                workers = sorted(workers)  # sorts the name from A -> Z
+                organization["Team Leaders"][department].extend(workers)
 
-    foreman_list.delete("1.0", "end")
-    foreman_list.insert("end", foreman_phones_str)
+        # Populate "Foremen" if the column exists in DataFrame
+        if "Foremen" in df:
+            foremen = df["Foremen"].dropna().tolist()
+            foremen = sorted(foremen)  # sorts the name from A -> Z
+            organization["Foremen"].extend(foremen)
+
+        # Populate the tree with the organizational data
+        for category, data in organization.items():
+            category_id = tree.insert('', 'end', text=category, open=False)
+            if isinstance(data, list):
+                # If data is a list (like for "Foremen"), add items directly under the category
+                for item in data:
+                    tree.insert(category_id, 'end', text=item)
+            else:
+                # If data is a dictionary (like for "Team Leaders"), iterate through departments
+                for dept, workers in data.items():
+                    dept_id = tree.insert(category_id, 'end', text=dept, open=False)
+                    for worker in workers:
+                        tree.insert(dept_id, 'end', text=worker)
+
+        is_tree_populated = True
 
 
-def copy_to_clipboard(event, text_widget):
+def copy_to_clipboard(event):
     try:
-        # Get the current line index
-        current_index = text_widget.index(CURRENT)
-        line = current_index.split('.')[0]
-        # Extract the line's content
-        line_text = text_widget.get(f"{line}.0", f"{line}.end")
-        # Clear the clipboard and append new content
-        phones_frame.clipboard_clear()
-        phones_frame.clipboard_append(line_text.strip())
-        # Optionally, show a message that the content was copied
-        messagebox.showinfo("Info", f"Copied to clipboard: {line_text.strip()}")
+        selected_item = tree.selection()
+        if selected_item:  # Check if something is selected
+            parent = tree.parent(selected_item[0])
+            # Ensure the item is not a top-level category or department
+            if parent and tree.parent(parent):
+                name = tree.item(selected_item[0], 'text')
+                frames["Phone"].clipboard_clear()
+                frames["Phone"].clipboard_append(name)
+                messagebox.showinfo("Info", f"Copied to clipboard: {name}")
+
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
@@ -2001,7 +2020,8 @@ app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 style = ttk.Style()
 style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-
+style.configure("Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+style.configure("Treeview", rowheight=20)
 # print(font.nametofont('TkDefaultFont').actual())
 # remove title bar
 # app.overrideredirect(True)
@@ -2328,33 +2348,34 @@ path_entry = ttk.Entry(master=bottom_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
 # ====================== Tab 1 -Phones frame ======================
+is_tree_populated = False
 
 phones_frame = frames["Phone"]
+phones_frame.pack(fill="both", expand=True)
 
+phones_frame.rowconfigure(0, weight=1)
 phones_frame.columnconfigure(0, weight=1)
-phones_frame.columnconfigure(1, weight=1)
 
-# Team Leader names on the left side
-tl_label = ttk.Label(master=phones_frame, text="Team Leaders", font=("Roboto", 9, "bold"))
-tl_label.grid(row=0, column=0, pady=10, sticky="s")
+tree_scroll = ttk.Scrollbar(phones_frame)
+tree_scroll.grid(row=0, column=1, pady=5, sticky="nsw")
 
-tl_phones_list = ttk.ScrolledText(master=phones_frame, wrap="word", spacing1=7, width=42, height=20)
-tl_phones_list.grid(row=1, column=0, padx=5)
+tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=tree_scroll.set)
+tree.grid(row=0, column=0, pady=5, sticky="nsew")
 
-# Foreman names on the right side
-foreman_label = ttk.Label(master=phones_frame, text="Foremen", font=("Roboto", 9, "bold"))
-foreman_label.grid(row=0, column=1, padx=5, pady=10, sticky="s")
-foreman_list = ttk.ScrolledText(master=phones_frame, wrap="word", spacing1=7, width=42, height=20)
-foreman_list.grid(row=1, column=1, padx=5)
-tl_phones_list.config(cursor="hand2")
-foreman_list.config(cursor="hand2")
+organization = {
+    "Team Leaders": {
+        "OCS": [],
+        "SCADA": [],
+        "SURICATA": [],
+        "OCS-D": [],
+        "OTHER": [],
+    },
+    "Foremen": []
+}
 
-ToolTip(tl_phones_list, "Click to Copy", delay=500)
-ToolTip(foreman_list, "Click to Copy", delay=500)
-
-# Bindings
-tl_phones_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, tl_phones_list))
-foreman_list.bind("<Button-1>", lambda event: copy_to_clipboard(event, foreman_list))
+tree_scroll.config(command=tree.yview)
+# Bind double-click event to copy to clipboard
+tree.bind('<Double-1>', copy_to_clipboard)
 
 # ====================== Tab 1 - Dist. list frame ======================
 
