@@ -1338,7 +1338,8 @@ def transfer_delay_wrapper():
     transfer_dates_label = ttk.Label(input_frame, text="Transfer to")
     transfer_dates_label.grid(row=1, column=0, padx=20, pady=5, sticky="w")
     global transfer_dates_cb
-    transfer_dates_cb = ttk.Combobox(input_frame, values=cp_dates, postcommand=update_combo_list, width=15)
+    transfer_dates_cb = ttk.Combobox(input_frame, values=cp_dates, postcommand=update_combo_list, width=15,
+                                     state="readonly")
     transfer_dates_cb.set("Date")
     transfer_dates_cb.bind("<<ComboboxSelected>>")
     transfer_dates_cb.grid(row=1, column=1, pady=10, sticky="w")
@@ -1680,7 +1681,6 @@ def toggle_theme():
     if theme_var.get() == 0:
         style.theme_use('litera')
 
-
     else:
         style.theme_use('superhero')
         style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
@@ -1760,23 +1760,23 @@ def update_edit_frame_based_on_frame_change():
 
 
 def display_dist_list():
-    show_frame("Dist list")
+    global dist_list_populated
 
+    show_frame("Dist list")
     paths = define_related_paths()
     proc_path = paths["procedure"]
 
-    if proc_path.exists():
+    if not dist_list_populated:
         try:
             # Read the Excel file into a pandas DataFrame
             df = pd.read_excel(proc_path, sheet_name='Dist. List', usecols='B, D, F, H')
-            df.fillna('', inplace=True)
 
             # Iterate over the DataFrame and the text widgets at the same time
-            for col, text_widget in zip(df.columns[:4], text_widgets):
+            for col, text_widget in zip(df.columns, text_widgets):
                 # Clear the text widget first
                 text_widget.delete('1.0', END)
                 # Insert the data into the text widget
-                column_data = '\n'.join(df[col].astype(str))
+                column_data = '\n'.join(df[col].dropna().astype(str))
                 text_widget.insert('1.0', column_data)
                 # Highlight lines containing "cc" after inserting the text
 
@@ -1786,6 +1786,56 @@ def display_dist_list():
             messagebox.showerror("Error", f"Failed to read Excel file: {e}")
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
+
+        else:
+            dist_list_populated = True
+
+
+def display_phone_list():
+    global is_phone_tree_populated
+
+    show_frame("Phone")
+    # Read the Excel file
+
+    if not is_phone_tree_populated:
+        try:
+            phone_tree.heading("#0", text="Phone Numbers")
+            df = pd.read_excel(construction_wp_path, sheet_name="SEMI List", usecols="B:F, H")
+
+            # Populate "Team Leaders" from DataFrame
+            for department in organization["Team Leaders"]:
+                if department in df:
+                    workers = df[department].dropna().tolist()
+                    workers = sorted(workers)  # sorts the name from A -> Z
+                    organization["Team Leaders"][department].extend(workers)
+
+            # Populate "Foremen" if the column exists in DataFrame
+            if "Foremen" in df:
+                foremen = df["Foremen"].dropna().tolist()
+                foremen = sorted(foremen)  # sorts the name from A -> Z
+                organization["Foremen"].extend(foremen)
+
+            # Populate the tree with the organizational data
+            for category, data in organization.items():
+                category_id = phone_tree.insert('', 'end', text=category, open=False)
+                if isinstance(data, list):
+                    # If data is a list (like for "Foremen"), add items directly under the category
+                    for item in data:
+                        phone_tree.insert(category_id, 'end', text=item)
+                else:
+                    # If data is a dictionary (like for "Team Leaders"), iterate through departments
+                    for dept, workers in data.items():
+                        dept_id = phone_tree.insert(category_id, 'end', text=dept, open=False)
+                        for worker in workers:
+                            phone_tree.insert(dept_id, 'end', text=worker)
+
+        except ValueError as e:
+            messagebox.showerror("Error", f"Failed to read Excel file: {e}")
+        except Exception as e:
+            messagebox.showerror("Error", f"An error occurred: {e}")
+
+        else:
+            is_phone_tree_populated = True
 
 
 # Function to toggle between template and original content
@@ -1806,14 +1856,43 @@ def toggle_content(text_widget, template, original_contents, column):
 
 
 def highlight_lines_containing_cc(text_widget):
-    # Defines a tag for 'email' and 'whatsapp'
+    text_widget.tag_add("default_color", "1.0", "end")
     text_widget.tag_configure("highlight", underline=True, font=("Roboto", 9, "bold"))
-    # Defines a tag for 'cc' with a different style
-    text_widget.tag_configure("cc_highlight", font=("Roboto", 9, "bold"), background='#f90b31')
-
+    text_widget.tag_configure("cc_highlight", font=("Roboto", 9, "bold"), background='#FB6C83')
     words_to_highlight = ["email", "whatsapp", "preview"]
+    text_widget.tag_configure("email_color", foreground="#0072c6")
 
-    # Iterate over the list of words and highlight them with the 'highlight' tag
+    # Searchs for lines containing '@' and apply the tag
+    start_index = '1.0'
+    while True:
+        # Finds the next occurrence of '@'
+        start_index = text_widget.search("@", start_index, 'end', nocase=True)
+        if not start_index:
+            break
+
+        # Finds the end of the line containing '@'
+        end_index = f"{start_index} lineend"
+        # Applies the tag to the entire line
+        text_widget.tag_add("email_color", f"{start_index} linestart", end_index)
+        # Moves to the next line
+        start_index = f"{end_index}+1c"
+
+    # Insert new lines before "Preview Report (ISR)" if not already present
+    start_index = '1.0'
+    while True:
+        start_index = text_widget.search("Preview Report (ISR)", start_index, 'end', nocase=True)
+        if not start_index:
+            break
+
+        # Checks if the preceding characters are already '\n\n\n'
+        if text_widget.get(f"{start_index}-3c", start_index) != '\n\n\n':
+            text_widget.insert(start_index, '\n\n\n')
+            start_index = f"{start_index}+{len('Preview Report (ISR)')}c"
+        else:
+            # Moves past the current match to continue searching
+            start_index = f"{start_index}+{len('Preview Report (ISR)')}c"
+
+    # Iterates over the list of words and highlight them with the 'highlight' tag
     for word in words_to_highlight:
         start_index = '1.0'
         while True:
@@ -1824,7 +1903,7 @@ def highlight_lines_containing_cc(text_widget):
             text_widget.tag_add("highlight", start_index, end_index)
             start_index = f"{end_index}+1c"
 
-    # Search and highlight 'cc' with a different tag 'cc_highlight'
+    # Searchs and highlights 'cc' with a different tag 'cc_highlight'
     start_index = '1.0'
     while True:
         start_index = text_widget.search("cc", start_index, 'end', nocase=True)
@@ -1835,56 +1914,14 @@ def highlight_lines_containing_cc(text_widget):
         start_index = f"{end_index}+1c"
 
 
-def display_phone_list():
-    global is_tree_populated
-
-    show_frame("Phone")
-    # Read the Excel file
-
-    if not is_tree_populated:
-
-        tree.heading("#0", text="Phone Numbers")
-
-        df = pd.read_excel(construction_wp_path, sheet_name="SEMI List", usecols="B:F, H")
-
-        # Populate "Team Leaders" from DataFrame
-        for department in organization["Team Leaders"]:
-            if department in df:
-                workers = df[department].dropna().tolist()
-                workers = sorted(workers)  # sorts the name from A -> Z
-                organization["Team Leaders"][department].extend(workers)
-
-        # Populate "Foremen" if the column exists in DataFrame
-        if "Foremen" in df:
-            foremen = df["Foremen"].dropna().tolist()
-            foremen = sorted(foremen)  # sorts the name from A -> Z
-            organization["Foremen"].extend(foremen)
-
-        # Populate the tree with the organizational data
-        for category, data in organization.items():
-            category_id = tree.insert('', 'end', text=category, open=False)
-            if isinstance(data, list):
-                # If data is a list (like for "Foremen"), add items directly under the category
-                for item in data:
-                    tree.insert(category_id, 'end', text=item)
-            else:
-                # If data is a dictionary (like for "Team Leaders"), iterate through departments
-                for dept, workers in data.items():
-                    dept_id = tree.insert(category_id, 'end', text=dept, open=False)
-                    for worker in workers:
-                        tree.insert(dept_id, 'end', text=worker)
-
-        is_tree_populated = True
-
-
 def copy_to_clipboard(event):
     try:
-        selected_item = tree.selection()
+        selected_item = phone_tree.selection()
         if selected_item:  # Check if something is selected
-            parent = tree.parent(selected_item[0])
+            parent = phone_tree.parent(selected_item[0])
             # Ensure the item is not a top-level category or department
-            if parent and tree.parent(parent):
-                name = tree.item(selected_item[0], 'text')
+            if parent and phone_tree.parent(parent):
+                name = phone_tree.item(selected_item[0], 'text')
                 frames["Phone"].clipboard_clear()
                 frames["Phone"].clipboard_append(name)
                 messagebox.showinfo("Info", f"Copied to clipboard: {name}")
@@ -2002,14 +2039,14 @@ pyglet.font.add_file('digital-7/digital-7.ttf')
 
 app = ttk.Window()
 app.resizable(0, 0)
-app.title("Smart CIIM")
+app.title("CIIM Manager")
 
 # Grid
 app.grid_columnconfigure(0, weight=1)
 app.grid_rowconfigure(0, weight=1)
 # Geometry
 app_width = 790
-app_height = 550
+app_height = 520
 screen_width = app.winfo_screenwidth()
 screen_height = app.winfo_screenheight()
 x = (screen_width / 2) - (app_width / 2)
@@ -2021,10 +2058,9 @@ style = ttk.Style()
 style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
 style.configure("Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
-style.configure("Treeview", rowheight=20)
+style.configure("Treeview", rowheight=20, indent=50)
+
 # print(font.nametofont('TkDefaultFont').actual())
-# remove title bar
-# app.overrideredirect(True)
 
 # app.iconbitmap(bitmap='images/snake.ico')
 # app.iconbitmap(default='images/snake.ico')
@@ -2297,13 +2333,8 @@ phone_button = ttk.Button(master=side_frame, text="Phones", command=lambda: disp
 phone_button.pack(fill='x', ipady=7)
 
 transfer_button = ttk.Button(side_frame, text="Transfer Works", command=open_options_window,
-                             image=photo_images["Transfer"], bootstyle="dark")
+                             image=photo_images["Transfer"], bootstyle="dark", takefocus=False)
 transfer_button.pack(fill='x', ipady=7)
-
-toggle_btn = ttk.Checkbutton(app, text='Dark Mode', variable=theme_var, onvalue=1,
-                             offvalue=0, command=toggle_theme, style="success.RoundToggle"
-                             )  # bootstyle="success-round-toggle"
-toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)
 
 # ====================== Tab 1 - Home ======================
 
@@ -2315,11 +2346,15 @@ tab1.rowconfigure(1, weight=1)
 top_frame = ttk.Frame(master=tab1)
 top_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
 
+toggle_btn = ttk.Checkbutton(top_frame, text='Dark Mode', variable=theme_var, onvalue=1,
+                             offvalue=0, command=toggle_theme, style='success-round-toggle')
+toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)
+
 # Packing the hour and day labels at the top first
 hour_label = ttk.Label(master=top_frame, text="12:49", font="digital-7 120")
 hour_label.pack(anchor="center")
 
-day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font=("Roboto", 19, "bold"), style="secondary")
+day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font="digital-7 35", style="secondary")
 day_label.pack(padx=5, pady=5)
 
 # ====================== Tab 1 - Bottom Frame ======================
@@ -2348,7 +2383,7 @@ path_entry = ttk.Entry(master=bottom_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
 
 # ====================== Tab 1 -Phones frame ======================
-is_tree_populated = False
+is_phone_tree_populated = False  # it will ensure it runs only once and not each time we launch the frame
 
 phones_frame = frames["Phone"]
 phones_frame.pack(fill="both", expand=True)
@@ -2356,11 +2391,11 @@ phones_frame.pack(fill="both", expand=True)
 phones_frame.rowconfigure(0, weight=1)
 phones_frame.columnconfigure(0, weight=1)
 
-tree_scroll = ttk.Scrollbar(phones_frame)
-tree_scroll.grid(row=0, column=1, pady=5, sticky="nsw")
+phone_tree_scroll = ttk.Scrollbar(phones_frame)
+phone_tree_scroll.grid(row=0, column=1, pady=5, sticky="nsw")
 
-tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=tree_scroll.set)
-tree.grid(row=0, column=0, pady=5, sticky="nsew")
+phone_tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=phone_tree_scroll.set, takefocus=False)
+phone_tree.grid(row=0, column=0, sticky="nsew")
 
 organization = {
     "Team Leaders": {
@@ -2373,18 +2408,19 @@ organization = {
     "Foremen": []
 }
 
-tree_scroll.config(command=tree.yview)
-# Bind double-click event to copy to clipboard
-tree.bind('<Double-1>', copy_to_clipboard)
+phone_tree_scroll.config(command=phone_tree.yview)
+# Bindings
+phone_tree.bind('<Double-1>', copy_to_clipboard)
 
 # ====================== Tab 1 - Dist. list frame ======================
+dist_list_populated = False  # it will ensure it runs only once and not each time we launch the frame
 
 dist_frame = frames["Dist list"]
 
 # Configure the frame to give equal weight to all columns
 for i in range(4):
     dist_frame.columnconfigure(i, weight=1)
-    dist_frame.rowconfigure(2, weight=1)
+    dist_frame.rowconfigure(1, weight=1)
 
 templates = {
     "Pass down": "Hi Dana,\n\nNothing special happened during the shift.",
@@ -2392,7 +2428,7 @@ templates = {
                "\n\nHi all,"
                "\n\n  1. TLs ... didn't send forms."
                "\n  2.TLs ... didn't send worklogs."
-               "\n  3.TLs ... was delayed due to no TP."
+               "\n  3.TLs ... had a delay due to no TP."
                "\n\n\n\n\n\n\n             Email (ISR):"
                "\n\nHi Yoni,"
                "\n\nFind attached the draft of the CIIM Report.",
@@ -2415,26 +2451,25 @@ templates = {
                 "dd.mm.yy) / the weekend  (dd-dd.mm.yy)."
 }
 
-# Store the original content of the text widgets
+# Stores the original content of the text widgets
 original_contents = ['' for _ in range(4)]
 
 # Text widgets list
-text_widgets = [Text(dist_frame) for _ in range(4)]
+text_widgets = [Text(dist_frame, ) for _ in range(4)]
 
 
-# Function to create button commands
 def make_command(col, tw, temp):
     return lambda: toggle_content(tw, temp, original_contents, col)
 
 
-# Creates buttons and text widgets, and place them in the frame inside the canvas
+# Creates buttons and text widgets, and place them in the frame
 for column, (label_text, template) in enumerate(templates.items()):
     button = ttk.Button(dist_frame, text=label_text, command=make_command(column, text_widgets[column], template),
                         bootstyle="link", takefocus=False)
-    button.grid(row=1, column=column, pady=5, padx=2)
+    button.grid(row=0, column=column, pady=5, padx=2)
     text_widget = text_widgets[column]
-    text_widget.grid(row=2, column=column, sticky="nsew", padx=2)
-    ToolTip(button, text="Click for template", delay=600)
+    text_widget.grid(row=1, column=column, sticky="nsew", padx=2)
+    ToolTip(button, text="Click for template/emails", delay=600)
 
 # ====================== Tab 2 - File ======================
 
@@ -2449,7 +2484,7 @@ tab2_mid_frame.rowconfigure(1, weight=1)
 
 dc_select_date_label = ttk.Label(master=tab2_mid_frame, text="   Select date:  ")
 dc_select_date_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-dates_cb = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list)
+dates_cb = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list, state="readonly")
 dates_cb.set("Date")
 dates_cb.bind("<<ComboboxSelected>>", dc_combo_selected)
 dates_cb.grid(row=1, column=2, padx=5, pady=5, sticky="w")
@@ -2526,7 +2561,7 @@ menu3_frame1 = ttk.Frame(master=tab4)
 menu3_frame1.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 dc_select_date_label = ttk.Label(menu3_frame1, text="  Select date: ")
 dc_select_date_label.pack(side="left")
-dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, width=15)
+dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, width=15, state="readonly")
 dm_dates_cb.set("Date")
 dm_dates_cb.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_cb.pack(side="left", padx=15)
@@ -2622,5 +2657,3 @@ show_frame("Home")
 clock()
 
 app.mainloop()
-
-# TODO : Make that the user is updated when delay is managed and not created
