@@ -18,7 +18,7 @@ from ttkbootstrap.validation import add_numeric_validation, add_text_validation,
 
 
 def define_related_paths():
-    """Define all paths relative to the global CIIM_FOLDER_PATH."""
+    """Defines all paths relative to the global CIIM_FOLDER_PATH."""
     base_path = CIIM_DIR_PATH
 
     paths = {
@@ -72,7 +72,7 @@ def select_const_wp():
 
 def open_const_wp(event=None):
     """
-    Handle the opening and reading of the construction work plan file.
+    Handles the opening and reading of the construction work plan file.
     Fetches paths for the Construction Plan and CIIM folder, and extracts unique dates from the worksheet.
     At the end, prompts the user to provide their username.
     """
@@ -115,7 +115,7 @@ def update_dates_based_on_file():
     )
     construction_wp_workbook.close()
 
-    # Update any other widgets or global variables that depend on these dates here
+    # Updates any other widgets or global variables that depend on these dates here
     # For example, if you have a Listbox displaying the dates, you'd update it here.
 
 
@@ -144,6 +144,7 @@ def process_date_cell(cell):
         str: String representation of the date in the format YYYY-MM-DD.
              Returns None if no valid date is found.
     """
+
     if not cell.value:
         return None
 
@@ -185,7 +186,7 @@ def get_filtered_team_leaders(construction_wp_worksheet, date):
 
 def dc_combo_selected(event):
     """
-    Handle date selection from the dates_combobox and update relevant variables.
+    Handles date selection from the dates_combobox and update relevant variables.
 
     Note:
         Also reads the construction worksheet to get the relevant list of team leaders for the selected date.
@@ -822,18 +823,13 @@ def set_entry_status(entry, var_name, default_val=0):
     """
     Updates the style of a given entry based on its content and modifies a global variable accordingly.
     """
-    if entry.get() == "" and not entry == frame4_reason_entry:
-        entry.config(style="danger.TEntry")
+    if entry.get() == "":
+        entry.config(bootstyle="danger")
         globals()[var_name] = default_val
-        frame4_reason_entry.config(style="danger.TCombobox")
-        globals()["reason_var"] = default_val
 
     else:
-        if not entry == frame4_reason_entry and not entry == frame4_reason_entry:
-            entry.config(style="success.TEntry")
-            globals()[var_name] = 1
-            frame4_reason_entry.config(style="success.TCombobox")
-            globals()["reason_var"] = 1
+        entry.config(bootstyle="success")
+        globals()[var_name] = 1
 
 
 def line_status():
@@ -849,12 +845,12 @@ def line_status():
     if globals()["w1_entry"].get() == "" and frame4_workers_var.get() == 0:
         for entry_name in WORKER_ENTRIES:
             entry = globals()[entry_name]
-            entry.config(style="danger.TEntry")
+            entry.config(bootstyle="danger")
         globals()["worker1_var"] = 0
     else:
         for entry_name in WORKER_ENTRIES:
             entry = globals()[entry_name]
-            entry.config(style="success.TEntry")
+            entry.config(bootstyle="success")
         globals()["worker1_var"] = 1
 
     status_check()
@@ -1331,8 +1327,8 @@ def transfer_delay_wrapper():
     input_frame.grid_rowconfigure(3, weight=1)
     input_frame.grid_columnconfigure(2, weight=1)
 
-    explain_label = ttk.Label(input_frame, text="Select the date and the row number to which "
-                                                "\nyou want to transfer")
+    explain_label = ttk.Label(input_frame, text="Select the transfer date and the initial row number",
+                              anchor="center")
     explain_label.grid(row=0, columnspan=3, padx=20, pady=10, sticky="nsew")
 
     transfer_dates_label = ttk.Label(input_frame, text="Transfer to")
@@ -1536,7 +1532,6 @@ def create_folders():
     shutil.copy(fc_ciim_template_path, paths["day"])
 
     new_report_path = paths["day"] / ciim_daily_report
-    print(f"Renaming file to: {new_report_path}")
     template_in_dest = paths["day"] / DAILY_REPORT_TEMPLATE
     if template_in_dest.exists():
         template_in_dest.rename(new_report_path)
@@ -1644,13 +1639,10 @@ def write_data_to_report(src_path, target_date, target_directory, mappings):
     """
     Write data to the current day's report.
     """
-
     write_data_to_excel(src_path, target_date, target_directory, mappings)
 
 
-def write_data_to_previous_report(
-        src_path, target_date, target_directory, mappings, target_report_path
-):
+def write_data_to_previous_report(src_path, target_date, target_directory, mappings, target_report_path):
     """
     Write data to the previous day's report. Prompt the user to select a starting row.
     """
@@ -1672,21 +1664,37 @@ def write_data_to_previous_report(
     if not start_row_delay:
         return
 
-    write_data_to_excel(
-        src_path, target_date, target_directory, mappings, start_row=start_row_delay
-    )
+    write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=start_row_delay)
 
 
 def toggle_theme():
     if theme_var.get() == 0:
-        style.theme_use('litera')
+        style.theme_use('mark_light')
+        phone_tree.config(style="light.Treeview")
+    else:
+        style.theme_use("mark_dark")
+        phone_tree.config(style="dark.Treeview")
+
+    configure_styles()
+
+
+def configure_styles():
+    if theme_var.get() == 0:
+        style.configure("light.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+        style.configure("light.Treeview", rowheight=20, indent=50)
+        dm_tl_listbox.config(highlightcolor="#ced4da")
+        dc_tl_listbox.config(highlightcolor="#ced4da")
 
     else:
-        style.theme_use('superhero')
-        style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
-        style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-        style.configure("Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
-        style.configure("Treeview", rowheight=20)
+        style.configure("dark.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+        style.configure("dark.Treeview", rowheight=20, indent=50)
+        style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False, foreground="#373A3C")
+        style.configure("TMenubutton", font=("Roboto", 9, "bold"), foreground="#373A3C")
+        dm_tl_listbox.config(highlightcolor="#4b515c")
+        dc_tl_listbox.config(highlightcolor="#4b515c")
+
+    style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
+    style.configure("TMenubutton", font=("Roboto", 9, "bold"), relief="flat")
 
 
 def show_frame(frame_name):
@@ -1699,10 +1707,8 @@ def show_frame(frame_name):
     # Hide the sidebar and toggle button if the current frame is "Login"
     if frame_name == "Login":
         side_frame.pack_forget()  # Hide the sidebar
-        toggle_btn.pack_forget()  # Hide the toggle button
     else:
-        side_frame.pack(side=LEFT, fill=Y)  # Show the sidebar
-        toggle_btn.pack(side=TOP, anchor=E, padx=5, pady=5)  # Show the toggle button
+        side_frame.pack(side="left", fill="y")  # Show the sidebar
 
     for name, frame in frames.items():
         frame.pack_forget()
@@ -1779,8 +1785,8 @@ def display_dist_list():
                 column_data = '\n'.join(df[col].dropna().astype(str))
                 text_widget.insert('1.0', column_data)
                 # Highlight lines containing "cc" after inserting the text
-
                 highlight_lines_containing_cc(text_widget)
+                text_widget.config(state="disabled")
 
         except ValueError as e:
             messagebox.showerror("Error", f"Failed to read Excel file: {e}")
@@ -1842,14 +1848,18 @@ def display_phone_list():
 def toggle_content(text_widget, template, original_contents, column):
     current_content = text_widget.get('1.0', 'end-1c')
     if current_content.strip() == template.strip():
+        text_widget.config(state="normal")
         # If current content is the template, replace with original email
         text_widget.delete('1.0', 'end')
         text_widget.insert('1.0', original_contents[column])
+        text_widget.config(state="disabled")
     else:
         # If current content is not the template, store it and insert template
+        text_widget.config(state="normal")
         original_contents[column] = current_content
         text_widget.delete('1.0', 'end')
         text_widget.insert('1.0', template)
+        text_widget.config(state="disabled")
 
     # Reapply the highlight to the text widget
     highlight_lines_containing_cc(text_widget)
@@ -1857,10 +1867,10 @@ def toggle_content(text_widget, template, original_contents, column):
 
 def highlight_lines_containing_cc(text_widget):
     text_widget.tag_add("default_color", "1.0", "end")
-    text_widget.tag_configure("highlight", underline=True, font=("Roboto", 9, "bold"))
+    text_widget.tag_configure("highlight", underline=True, justify="center")
     text_widget.tag_configure("cc_highlight", font=("Roboto", 9, "bold"), background='#FB6C83')
     words_to_highlight = ["email", "whatsapp", "preview"]
-    text_widget.tag_configure("email_color", foreground="#0072c6")
+    text_widget.tag_configure("email_color", foreground="#0489c9")
 
     # Searchs for lines containing '@' and apply the tag
     start_index = '1.0'
@@ -2037,7 +2047,7 @@ enable_high_dpi_awareness()
 
 pyglet.font.add_file('digital-7/digital-7.ttf')
 
-app = ttk.Window()
+app = ttk.Window(themename="mark_light")
 app.resizable(0, 0)
 app.title("CIIM Manager")
 
@@ -2046,7 +2056,7 @@ app.grid_columnconfigure(0, weight=1)
 app.grid_rowconfigure(0, weight=1)
 # Geometry
 app_width = 790
-app_height = 520
+app_height = 530
 screen_width = app.winfo_screenwidth()
 screen_height = app.winfo_screenheight()
 x = (screen_width / 2) - (app_width / 2)
@@ -2057,9 +2067,10 @@ app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 style = ttk.Style()
 style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-style.configure("Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
-style.configure("Treeview", rowheight=20, indent=50)
-
+style.configure("light.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+style.configure("light.Treeview", rowheight=20, indent=50)
+style.configure("dark.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+style.configure("dark.Treeview", rowheight=20, indent=50)
 # print(font.nametofont('TkDefaultFont').actual())
 
 # app.iconbitmap(bitmap='images/snake.ico')
@@ -2268,14 +2279,13 @@ login_button.place(x=280, y=380)
 
 
 images_dict = {
-    "Home": 'images/icons8-home-24(6).png',
-    "File": 'images/icons8-file-24(3).png',
-    "Folder": 'images/icons8-folder-24(2).png',
-    "Edit": 'images/icons8-edit-24(3).png',
-    "Phone": 'images/icons8-phone-contact-24.png',
-    "Dist list": 'images/icons8-mail-24.png',
-    "Extras": 'images/icons8-settings-24(1).png',
-    "Transfer": 'images/icons8-transfer-24.png'
+    "Home": 'images/home_l.png',
+    "File": 'images/file_l.png',
+    "Folder": 'images/folder_l.png',
+    "Edit": 'images/edit_l.png',
+    "Phone": 'images/phone_l.png',
+    "Dist list": 'images/mail_l.png',
+    "Transfer": 'images/transfer_l.png'
 }
 
 photo_images = {}  # Dictionary to store the PhotoImage objects
@@ -2366,10 +2376,10 @@ home_browse_button = ttk.Button(master=bottom_frame, text="Change", command=sele
 home_browse_button.pack(anchor='sw', side='left', pady=5)
 
 # Open files menu
-open_mb = ttk.Menubutton(top_frame, text="Open file", bootstyle="success", width=10)
+open_mb = ttk.Menubutton(top_frame, text="Open file", width=10)
 open_mb.pack(pady=50)
 
-open_menu = ttk.Menu(open_mb)
+open_menu = ttk.Menu(open_mb, tearoff=0)
 
 open_menu.add_command(label="Construction Work Plan", command=open_wp_file)
 open_menu.add_command(label="Weekly Delay Table", command=open_ww_delay)
@@ -2378,6 +2388,8 @@ open_menu.add_command(label="Electrification Control Center", command=open_fault
 open_menu.add_command(label="Procedure", command=open_procedure_file)
 
 open_mb["menu"] = open_menu
+
+open_menu.config(relief="raised")
 
 path_entry = ttk.Entry(master=bottom_frame, textvariable=construction_wp_var)
 path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
@@ -2391,10 +2403,11 @@ phones_frame.pack(fill="both", expand=True)
 phones_frame.rowconfigure(0, weight=1)
 phones_frame.columnconfigure(0, weight=1)
 
-phone_tree_scroll = ttk.Scrollbar(phones_frame)
+phone_tree_scroll = ttk.Scrollbar(phones_frame, style="round")
 phone_tree_scroll.grid(row=0, column=1, pady=5, sticky="nsw")
 
-phone_tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=phone_tree_scroll.set, takefocus=False)
+phone_tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=phone_tree_scroll.set,
+                          style="light.Treeview", padding=10)
 phone_tree.grid(row=0, column=0, sticky="nsew")
 
 organization = {
@@ -2455,7 +2468,7 @@ templates = {
 original_contents = ['' for _ in range(4)]
 
 # Text widgets list
-text_widgets = [Text(dist_frame, ) for _ in range(4)]
+text_widgets = [Text(dist_frame) for _ in range(4)]
 
 
 def make_command(col, tw, temp):
@@ -2466,10 +2479,11 @@ def make_command(col, tw, temp):
 for column, (label_text, template) in enumerate(templates.items()):
     button = ttk.Button(dist_frame, text=label_text, command=make_command(column, text_widgets[column], template),
                         bootstyle="link", takefocus=False)
-    button.grid(row=0, column=column, pady=5, padx=2)
+    button.grid(row=0, column=column, pady=5)
     text_widget = text_widgets[column]
+    # text_widget.config(highlightbackground="#d3d3d3")
     text_widget.grid(row=1, column=column, sticky="nsew", padx=2)
-    ToolTip(button, text="Click for template/emails", delay=600)
+    ToolTip(button, text="Click for template/emails", delay=500)
 
 # ====================== Tab 2 - File ======================
 
@@ -2484,7 +2498,7 @@ tab2_mid_frame.rowconfigure(1, weight=1)
 
 dc_select_date_label = ttk.Label(master=tab2_mid_frame, text="   Select date:  ")
 dc_select_date_label.grid(row=1, column=1, padx=5, pady=5, sticky="e")
-dates_cb = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list, state="readonly")
+dates_cb = ttk.Combobox(master=tab2_mid_frame, values=cp_dates, postcommand=update_combo_list)
 dates_cb.set("Date")
 dates_cb.bind("<<ComboboxSelected>>", dc_combo_selected)
 dates_cb.grid(row=1, column=2, padx=5, pady=5, sticky="w")
@@ -2552,8 +2566,8 @@ create_button = ttk.Button(master=tab3_toolbar, text="Create", command=create_fo
 create_button.pack(side=RIGHT, padx=10, pady=10)
 
 # ====================== Tab 4 - Edit ======================
-tab4.rowconfigure(0, weight=1)
-tab4.rowconfigure(1, weight=1)
+tab4.rowconfigure(0, weight=3)
+tab4.rowconfigure(1, weight=7)
 tab4.columnconfigure(1, weight=1)
 
 # Date Select
@@ -2561,7 +2575,7 @@ menu3_frame1 = ttk.Frame(master=tab4)
 menu3_frame1.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 dc_select_date_label = ttk.Label(menu3_frame1, text="  Select date: ")
 dc_select_date_label.pack(side="left")
-dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, width=15, state="readonly")
+dm_dates_cb = ttk.Combobox(menu3_frame1, values=cp_dates, postcommand=update_combo_list, width=15)
 dm_dates_cb.set("Date")
 dm_dates_cb.bind("<<ComboboxSelected>>", dm_combo_selected)
 dm_dates_cb.pack(side="left", padx=15)
@@ -2656,4 +2670,7 @@ save_button.pack(anchor="n", side=RIGHT, padx=10, pady=10)
 show_frame("Home")
 clock()
 
+dm_tl_listbox.config(highlightcolor="#505050")
+# for tw in text_widgets:
+#     tw.config(highlightbackground="#d3d3d3")
 app.mainloop()
