@@ -5,6 +5,7 @@ import shutil
 import time
 import datetime as dt
 from datetime import datetime
+from fileinput import filename
 from pathlib import Path
 from tkinter import *
 from tkinter import filedialog, messagebox
@@ -12,6 +13,7 @@ import pandas as pd
 from openpyxl import load_workbook
 from PIL import ImageTk, Image
 import ttkbootstrap as ttk
+from pandas import date_range
 from ttkbootstrap.tooltip import ToolTip
 from ttkbootstrap.utility import enable_high_dpi_awareness
 from ttkbootstrap.validation import add_numeric_validation
@@ -28,14 +30,13 @@ background_image_path = resource_path('images/background.png')
 
 def define_related_paths():
     """Defines all paths relative to the global CIIM_FOLDER_PATH."""
-    base_path = CIIM_DIR_PATH
 
     paths = {
-        "delays": base_path / "General Updates" / "Delays+Cancelled works",
-        "faults": base_path / "General Updates" / "Fault Report Management" / "Electrification Control Center Fault "
+        "faults": base_path / "Faults" / "Electrification Control Center Fault "
                                                                               "Report Management 2.0.xlsx",
-        "templates": base_path / "Important doc" / "Empty reports (templates)",
-        "procedure": base_path / "Important Doc" / "Protocols" / "CIIM procedure test2.0.xlsx",
+        "templates": base_path / "Important" / "Templates",
+        "procedure": base_path / "Important" / "Protocols" / "CIIM procedure test2.0.xlsx",
+        "delays": base_path / "Delays+Cancelled works"
     }
 
     return paths
@@ -55,7 +56,7 @@ def get_ww_delay_file():
     return path, filename
 
 
-def get_ciim_dir_path_from_file(file_path):
+def get_base_path_from_file(file_path):
     """Retrieve the CIIM folder path from the given file path."""
     return file_path.parent.parent.parent
 
@@ -82,13 +83,13 @@ def update_dates_based_on_file():
     """
     Update the unique dates based on the selected construction work plan file.
     """
-    global construction_wp_path, CIIM_DIR_PATH, cp_dates
+    global construction_wp_path, base_path, cp_dates
 
     if not construction_wp_path or construction_wp_path == Path("/"):
         return
 
     construction_wp_workbook = load_workbook(filename=construction_wp_path)
-    CIIM_DIR_PATH = get_ciim_dir_path_from_file(construction_wp_path)
+    base_path = get_base_path_from_file(construction_wp_path)
     cp_dates = extract_unique_dates_from_worksheet(
         construction_wp_workbook["Const. Plan"]
     )
@@ -190,11 +191,11 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
     src_ws = src_wb["Const. Plan"]
 
     dest_wb = load_workbook(destination_file)
-    dest_ws = dest_wb["Cancellations Data"]
+    dest_ws = dest_wb["Cancellations"]
 
     # Print all headers from the source file
     print("Source headers:", [cell.value for cell in src_ws[2]])
-    print("Destination headers:", [cell.value for cell in dest_ws[1]])
+    print("Destination headers:", [cell.value for cell in dest_ws[2]])
 
     src_header = {
         cell.value: col_num + 1
@@ -205,7 +206,7 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
 
     dest_header = {
         cell.value: col_num + 1
-        for col_num, cell in enumerate(dest_ws[1])
+        for col_num, cell in enumerate(dest_ws[2])
         if cell.value in mappings.values()
     }
 
@@ -265,11 +266,11 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
     src_ws = src_wb.active
 
     dest_wb = load_workbook(destination_file)
-    dest_ws = dest_wb["Activities Data"]
+    dest_ws = dest_wb["Delays"]
 
     # Print headers for debugging
     print("Source headers:", [cell.value for cell in src_ws[3]])
-    print("Destination headers:", [cell.value for cell in dest_ws[1]])
+    print("Destination headers:", [cell.value for cell in dest_ws[2]])
 
     # Mapping source and destination headers to their respective column numbers
     src_header = {
@@ -280,9 +281,10 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
 
     dest_header = {
         cell.value: col_num + 1
-        for col_num, cell in enumerate(dest_ws[1])
+        for col_num, cell in enumerate(dest_ws[2])
         if cell.value in mappings.values()
     }
+
 
     # Find the column number for "Activity Summary" in the source file
     sum_col_num = None
@@ -334,9 +336,6 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
     return transferred_rows
 
 
-
-
-
 def calculate_week_num(date):
     # Adjust the date by moving any Sunday to the next day (Monday)
     adjusted_date = date + dt.timedelta(days=1) if date.weekday() == 6 else date
@@ -363,11 +362,11 @@ def derive_paths_from_date(selected_date):
     }
 
     paths = {
-        "year": CIIM_DIR_PATH / f"Working Year {c_year}",
-        "week": CIIM_DIR_PATH / f"Working Year {c_year}" / f"Working Week N{c_week}",
-        "day": CIIM_DIR_PATH
-               / f"Working Year {c_year}"
-               / f"Working Week N{c_week}"
+        "year": base_path / c_year,
+        "week": base_path / c_year / f"WW{c_week}",
+        "day": base_path
+               / c_year
+               / f"WW{c_week}"
                / f"{c_year[-2:]}{c_month}{c_day}",
 
     }
@@ -430,32 +429,26 @@ def create_folders():
 
         if template_in_dest.exists():
             template_in_dest.rename(new_report_path)
-            time.sleep(1)
         else:
             print(f'Template not found in {paths["day"]}!')
     else:
         print(f'{new_report_path} already exists, skipping template copying.')
 
-    # Creating folders for entries
-    create_folders_for_entries(paths["day"], ocs_entry, "W")
-    create_folders_for_entries(paths["day"], scada_entry, "S")
+    # # Creating folders for entries
+    # create_folders_for_entries(paths["day"], ocs_entry, "W")
+    # create_folders_for_entries(paths["day"], scada_entry, "S")
 
     # Creating other necessary folders
     folders_to_create = [
-        "FM Forms",
+        "Nominations",
         "Pictures",
-        "TL Forms",
-        "Track Possessions",
+        "Worklogs",
+        "Toolboxes",
+        "Pump Documents",
     ]
     for folder in folders_to_create:
         (paths["day"] / folder).mkdir(exist_ok=True)
 
-        if folder == "TL Forms":
-            (paths["day"] / "TL Forms" / "Toolboxes").mkdir(exist_ok=True)
-            (paths["day"] / "TL Forms" / "Worklogs").mkdir(exist_ok=True)
-
-        if folder == "FM Forms":
-            (paths["day"] / "FM Forms" / "Pump doc").mkdir(exist_ok=True)
 
     # Handle data report writing and copying
     if Path(construction_wp_path).parent != Path(paths["week"]):
@@ -469,9 +462,9 @@ def create_folders():
         TO_DAILY_REPORT_MAPPINGS,
     )
 
-    # Reset and configure other widgets
-    ocs_entry.delete(0, END)
-    scada_entry.delete(0, END)
+    # # Reset and configure other widgets
+    # ocs_entry.delete(0, END)
+    # scada_entry.delete(0, END)
 
 
 def write_data_to_excel(src_path, target_date, target_directory, mappings, start_row=4):
@@ -547,14 +540,15 @@ def write_data_to_excel(src_path, target_date, target_directory, mappings, start
                             message=f"Num of planned works (excluding cancelled): {planned_works_num}"
                                     f"\nNum of cancelled works: {cancelled_works_num}")
 
+        wb.save(target_report_path)
+        print(f"Report for {formatted_target_date} has been updated and saved.")
+
     except ValueError as e:
         messagebox.showerror("Error", f"Failed to read Excel file: {e}")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
     finally:
-        wb.save(target_report_path)
-        print(f"Report for {formatted_target_date} has been updated and saved.")
         wb.close()
 
 
@@ -799,31 +793,65 @@ def open_ww_delay():
 
 
 def clear_destination_sheet(destination_file, sheet_name):
+    """
+    Clears the data in the specified sheet of the destination file, keeping only the header row (row 2).
+    Clears only if there is data beyond the header row.
+    """
     wb = load_workbook(destination_file)
     ws = wb[sheet_name]
-    max_row = ws.max_row
-    if max_row > 1:
-        ws.delete_rows(2, max_row - 1)
+
+    # Check if there are more than two rows to clear
+    if ws.max_row > 2:
+        # Only clear rows starting from row 3
+        ws.delete_rows(3, ws.max_row - 2)
+
     wb.save(destination_file)
+    wb.close()
+
+
 
 def open_options_window():
     global cp_dates
-
 
     def on_confirm_delay():
         nonlocal daily_report_path
         global current_combobox_index
 
         delay_transferred_total = 0
-        dest_start_row = 2
+        dest_start_row = 3
 
-        paths = define_related_paths()
-        delays_path = paths["delays"]
-        ww_delay_path = delays_path / "transfer_data.xlsx"
+        # Define paths and filenames
+        main_paths = define_related_paths()
+        date_str = cp_dates[0]
+        formatted_str_date, dt_date, week_num = extract_date(date_str)
+        paths, _ = derive_paths_from_date(dt_date)
 
+        # Set the delay filename and path
+        delay_filename = f"Weekly Delay table WW{week_num}.xlsx"
+        new_report_path = paths["week"] / delay_filename
+        template_in_dest = paths["week"] / WEEKLY_DELAY_TEMPLATE
+
+        # Check if the file exists
+        if not new_report_path.exists():
+            # File doesn't exist, copy and rename the template
+            templates_path = main_paths["templates"]
+            temp_delay_template_path = templates_path / WEEKLY_DELAY_TEMPLATE
+
+            print(f'Copying template to: {paths["week"]}')
+            shutil.copy(temp_delay_template_path, paths["week"])
+
+            if template_in_dest.exists():
+                template_in_dest.rename(new_report_path)
+            else:
+                print(f'Template not found in {paths["week"]}!')
+        else:
+            print(f'{new_report_path} already exists, skipping template copying.')
+
+            # Clear the destination sheet if the file already exists
+            # clear_destination_sheet(new_report_path, "Delays")
+
+        # Transfer data to the newly created or cleared file
         try:
-            clear_destination_sheet(ww_delay_path, "Activities Data")
-
             for date in cp_dates:
                 formatted_str_date, dt_date, week_num = extract_date(date)
                 daily_report_path = extract_src_path_from_date(formatted_str_date, dt_date, week_num)
@@ -836,42 +864,102 @@ def open_options_window():
 
                 delay_transferred = transfer_data_to_delay(
                     daily_report_path,
-                    ww_delay_path,
+                    new_report_path,
                     TO_DELAY_MAPPINGS,
                     dest_start_row
                 )
                 dest_start_row += delay_transferred  # Update the starting row for the next date
                 delay_transferred_total += delay_transferred
 
-            transferred_message = f"{delay_transferred_total} rows transferred in total to {ww_delay_path.name}"
+            transferred_message = f"{delay_transferred_total} rows transferred in total"
             messagebox.showinfo("Success", transferred_message)
+
+            # Clean up empty rows after transfer
+            delete_empty_rows(
+                new_report_path,
+                "Delays",
+                delay_transferred_total + 2  # 2 accounted for the title and the Headers column
+            )
+
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
             top_level.destroy()
 
 
+    def delete_empty_rows(file_path, sheet_name, num_rows_to_keep):
+        from openpyxl import load_workbook
+
+        wb = load_workbook(file_path)
+        ws = wb[sheet_name]
+
+        # Determine the total number of rows
+        max_row = ws.max_row
+
+        # Calculate the starting row to delete
+        rows_to_delete_start = num_rows_to_keep + 1  # +1 to account for the first row to delete
+
+        # Ensure we don't attempt to delete rows before the start of the worksheet
+        if rows_to_delete_start <= max_row:
+            # Delete rows from the end up to the calculated starting row
+            for row in range(max_row, rows_to_delete_start - 1, -1):
+                ws.delete_rows(row)
+
+        wb.save(file_path)
+        wb.close()
+
+
     def on_confirm_cancel():
 
-        dest_start_row = 2
+        dest_start_row = 3
 
-        paths = define_related_paths()
-        delays_path = paths["delays"]
-        cancel_ww_delay_path = delays_path / "transfer_data.xlsx"
+        # Define paths and filenames
+        main_paths = define_related_paths()
+        date_str = cp_dates[0]
+        formatted_str_date, dt_date, week_num = extract_date(date_str)
+        paths, _ = derive_paths_from_date(dt_date)
+
+        # Set the delay filename and path
+        delay_filename = f"Weekly Delay Table WW{week_num}.xlsx"
+        new_report_path = paths["week"] / delay_filename
+        template_in_dest = paths["week"] / WEEKLY_DELAY_TEMPLATE
+
+        # Check if the file exists
+        if not new_report_path.exists():
+            # File doesn't exist, copy and rename the template
+            templates_path = main_paths["templates"]
+            temp_delay_template_path = templates_path / WEEKLY_DELAY_TEMPLATE
+
+            print(f'Copying template to: {paths["week"]}')
+            shutil.copy(temp_delay_template_path, paths["week"])
+
+            if template_in_dest.exists():
+                template_in_dest.rename(new_report_path)
+            else:
+                print(f'Template not found in {paths["week"]}!')
+        else:
+            print(f'{new_report_path} already exists, skipping template copying.')
 
         try:
-            clear_destination_sheet(cancel_ww_delay_path, "Cancellations Data")
+            # clear_destination_sheet(new_report_path, "Cancellations Data")
 
             cancelled_transferred = transfer_data_to_cancelled(
                 construction_wp_path,
-                cancel_ww_delay_path,
+                new_report_path,
                 TO_CANCELLED_MAPPING,
-                dest_start_row=2
+                dest_start_row
             )
 
             # Updated message to show how many rows were transferred
             transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None \
                 else "No rows were transferred."
             messagebox.showinfo("Success", transferred_message)
+
+            delete_empty_rows(
+                new_report_path,
+                "Cancellations",
+                cancelled_transferred + 2  # 2 accounted for the title and the Headers column
+            )
+
         except Exception as e:
             messagebox.showerror("Error", f"An error occurred: {e}")
 
@@ -956,8 +1044,8 @@ current_frame = None
 cancel_wp_path = Path("/")
 cancel_wp_var = StringVar()
 # Paths
-CIIM_DIR_PATH = Path("/")
-delays_dir_path = Path("/")
+base_path = Path("/")
+ww_delay_path = Path("/")
 construction_wp_path = Path("/")
 construction_wp_var = StringVar()
 delay_report_path = Path("/")
@@ -1174,9 +1262,11 @@ def get_dates():
     tomorrow = today + dt.timedelta(days=1)
     return tonight.strftime('%d.%m.%y'), tomorrow.strftime('%d.%m.%y')
 
+
 def fill_template(template, tonight_date, tomorrow_date):
     # Replace all occurrences of dd.mm.yy with the correct dates
     return template.replace("dd.mm.yy", tonight_date, 1).replace("dd.mm.yy", tomorrow_date, 1).replace("dd.mm.yy", tonight_date, 1).replace("dd.mm.yy", tomorrow_date, 1)
+
 
 def populate_templates_with_dates(templates):
     tonight_date, tomorrow_date = get_dates()
