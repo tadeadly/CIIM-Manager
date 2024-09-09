@@ -13,7 +13,7 @@ from PIL import ImageTk, Image
 import ttkbootstrap as ttk
 from ttkbootstrap.tooltip import ToolTip
 from ttkbootstrap.utility import enable_high_dpi_awareness
-from ttkbootstrap.validation import add_numeric_validation
+
 
 
 def resource_path(relative_path):
@@ -27,11 +27,11 @@ def define_related_paths():
     """Defines all paths relative to the global CIIM_FOLDER_PATH."""
 
     paths = {
-        "Construction": base_path / "Construction Files",
-        "Delays": base_path / "Delays" ,
+        "Construction": base_path / "Construction Management",
+        "Delays": base_path / "Delays and Cancellations" ,
         "faults": base_path / "Fault Reports" / "Fault Report Database.xlsx",
         "templates": base_path / "Templates",
-        "procedure": base_path / "Protocols" / "CIIM procedure test2.0.xlsx",
+        "procedure": base_path / "Protocols" / "CIIM Procedure.xlsx",
     }
 
     return paths
@@ -46,7 +46,7 @@ def select_const_wp():
     """
     Opens a file dialog for the user to select an Excel file.
     """
-    global wp_var, wp_path
+    global wp_var, wp_path, path_entry
     pattern = "WW*Construction Work Plan*.xlsx"
     path = filedialog.askopenfilename(filetypes=[("Excel Files", pattern)])
 
@@ -57,6 +57,12 @@ def select_const_wp():
         update_dates_based_on_file()
         # If no path was selected, simply do nothing
 
+        path_entry.configure(bootstyle="secondary")
+        open_menu.configure(state="enabled")
+        create_menu.configure(state="enabled")
+
+
+
     return wp_path if path else None
 
 
@@ -64,16 +70,30 @@ def update_dates_based_on_file():
     """
     Update the unique dates based on the selected construction work plan file.
     """
-    global wp_path, base_path, cp_dates
+    global wp_path, base_path, cp_dates, ww_var
 
     if not wp_path or wp_path == Path("/"):
         return
 
     wb = load_workbook(filename=wp_path)
     base_path = get_base_path_from_file(wp_path)
-    cp_dates = extract_unique_dates_from_worksheet(
-        wb["Const. Plan"]
-    )
+    cp_dates = extract_unique_dates_from_worksheet(wb["Const. Plan"])
+
+    if not cp_dates:
+        messagebox.showwarning("No Dates Found", "No dates found in the construction plan.")
+        wb.close()
+        return
+
+    str_date = cp_dates[0]
+    formatted_str_date, dt_date, week_num = extract_date(str_date)
+
+    # Print for debugging
+    print(f"Week Number Extracted: {week_num}")
+
+    ww_var.set(week_num)
+
+    update_menu_labels()
+
     wb.close()
 
 
@@ -362,8 +382,13 @@ def create_folders():
     dt_date = datetime.strptime(str_date, '%Y-%m-%d')
     paths, c_formatted_dates = derive_paths_from_date(dt_date)
 
-    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
+    # Ensure that  the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
 
+    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
     if paths["day"].exists():
         overwrite = messagebox.askyesno("Folder Exists", f"{day_message_exist}\nDo you want to overwrite?")
         if not overwrite:
@@ -409,7 +434,6 @@ def create_folders():
         "Pictures",
         "Worklogs",
         "Toolboxes",
-        "Pump Documents",
     ]
     for folder in folders_to_create:
         (paths["day"] / folder).mkdir(exist_ok=True)
@@ -425,6 +449,7 @@ def create_folders():
         c_formatted_dates["slash"],
         TO_DAILY_REPORT_MAPPINGS,
     )
+
 
 
 def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4):
@@ -525,7 +550,7 @@ def clock():
     time = datetime.now()
     hour = time.strftime(" %H:%M ")
     weekday = time.strftime("%A")
-    day = time.day
+    day = time.strftime("%d")
     month = time.strftime("%m")
     year = time.strftime("%Y")
 
@@ -537,6 +562,12 @@ def clock():
 
 def display_dist_list():
     global dist_list_populated
+
+    # Ensure that  the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
 
     show_frame("Dist list")
     paths = define_related_paths()
@@ -569,6 +600,12 @@ def display_dist_list():
 
 def display_phone_list():
     global is_phone_tree_populated
+
+    # Ensure that  the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
 
     show_frame("Phone")
 
@@ -711,6 +748,12 @@ def copy_to_clipboard(event):
 
 
 def open_procedure_file():
+    # Ensure that  the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
+
     paths = define_related_paths()
     proc_path = paths["procedure"]
     os.startfile(proc_path)
@@ -727,231 +770,243 @@ def open_faults():
     os.startfile(faults_path)
 
 
-def open_options_window():
+def delete_empty_rows(file_path, sheet_name, num_rows_to_keep):
+    from openpyxl import load_workbook
+
+    # Load the workbooks and worksheets
+    wb = load_workbook(file_path)
+    ws = wb[sheet_name]
+
+    # Determine the total number of rows
+    max_row = ws.max_row
+
+    # Calculate the starting row to delete
+    rows_to_delete_start = num_rows_to_keep + 1  # +1 to account for the first row to delete
+
+    # Ensure we don't attempt to delete rows before the start of the worksheet
+    if rows_to_delete_start <= max_row:
+        # Delete rows from the end up to the calculated starting row
+        for row in range(max_row, rows_to_delete_start - 1, -1):
+            ws.delete_rows(row)
+
+        print(f"{sheet_name}: Deleted rows after row {rows_to_delete_start}")
+
+    wb.save(file_path)
+    wb.close()
+
+
+def create_and_transfer_to_wkly_delay():
+    """
+    Transfers data to both the 'Cancellations' and 'Delays' sheets in the destination file.
+    """
     global cp_dates
 
-    def delete_empty_rows(file_path, sheet_name, num_rows_to_keep):
-        from openpyxl import load_workbook
-
-        # Load the workbooks and worksheets
-        wb = load_workbook(file_path)
-        ws = wb[sheet_name]
-
-        # Determine the total number of rows
-        max_row = ws.max_row
-
-        # Calculate the starting row to delete
-        rows_to_delete_start = num_rows_to_keep + 1  # +1 to account for the first row to delete
-
-        # Ensure we don't attempt to delete rows before the start of the worksheet
-        if rows_to_delete_start <= max_row:
-            # Delete rows from the end up to the calculated starting row
-            for row in range(max_row, rows_to_delete_start - 1, -1):
-                ws.delete_rows(row)
-
-            print(f"Deleted rows after row {rows_to_delete_start}")
-
-        wb.save(file_path)
-        wb.close()
-
-
-    def on_confirm_delay():
-        nonlocal daily_report_path
-        global current_combobox_index
-
+    try:
+        # Ensure that  the Work plan was selected
         if len(cp_dates) == 0:
             error_message = "Please select the Construction plan and try again!"
-            messagebox.showerror("File Not Found", error_message)
+            messagebox.showwarning("File Not Found", error_message)
             return
 
-        # Variables
+        # Variables for destination file paths and names
         delay_transferred_total = 0
         dest_start_row = 3
-
-        # Define paths and filenames
         main_paths = define_related_paths()
         date_str = cp_dates[0]
         formatted_str_date, dt_date, week_num = extract_date(date_str)
         delay_path = main_paths["Delays"] / str(dt_date.year)
 
         # Set the delay filename and path
-        delay_filename = f"Weekly Delay table WW{week_num}.xlsx"
-        new_report_path = delay_path  / delay_filename
-        template_in_dest = delay_path / WEEKLY_DELAY_TEMPLATE
+        wkly_delay_filename = f"Weekly Delay Table WW{week_num}.xlsx"
+        new_report_path = delay_path / wkly_delay_filename
+        templates_path = main_paths["templates"]
+        wkly_delay_temp_path = templates_path / WEEKLY_DELAY_TEMPLATE
+        wkly_temp_in_dest = delay_path / WEEKLY_DELAY_TEMPLATE
 
-        # Check if the file exists
+        # Check if the file exists and copy template if necessary
         if not new_report_path.exists():
-            # File doesn't exist, copy and rename the template
-            templates_path = main_paths["templates"]
-            temp_delay_template_path = templates_path / WEEKLY_DELAY_TEMPLATE
+            shutil.copy(wkly_delay_temp_path, delay_path)
+            wkly_temp_in_dest.rename(new_report_path)
+            print(f'Copying template to: {delay_path.name} and renaming to {new_report_path.name}')
 
-            print(f'Copying template to: {delay_path.parent}')
-            shutil.copy(temp_delay_template_path, delay_path)
-
-            if template_in_dest.exists():
-                template_in_dest.rename(new_report_path)
-            else:
-                print(f'Template not found in {delay_path}!')
         else:
-            file_message_exist = f'{delay_filename[:-5]} already exists'
+            file_message_exist = f'{wkly_delay_filename[:-5]} already exists'
             overwrite = messagebox.askyesno("File Exists", f"{file_message_exist}\nDo you want to overwrite?")
+
             if not overwrite:
                 return  # Exit the function if the user does not want to overwrite
+
             else:
                 print(f'Overwriting {new_report_path}...')
 
-        # Transfer data to the newly created or cleared file
-        try:
-            for date in cp_dates:
-                formatted_str_date, dt_date, week_num = extract_date(date)
-                daily_report_path = extract_src_path_from_date(dt_date)
+        # Transfer data to Cancellations Sheet
+        cancelled_transferred = transfer_data_to_cancelled(
+            wp_path,
+            new_report_path,
+            TO_CANCELLED_MAPPING,
+            dest_start_row
+        )
 
-                # Check if the daily report path exists
-                if not os.path.exists(daily_report_path):
-                    error_message = f"File not found: {daily_report_path}. Stopping the transfer process."
-                    messagebox.showerror("File Not Found", error_message)
-                    break
+        # Transfer data to Delays Sheet
+        for date in cp_dates:
+            formatted_str_date, dt_date, week_num = extract_date(date)
+            daily_report_path = extract_src_path_from_date(dt_date)
 
-                delay_transferred = transfer_data_to_delay(
-                    daily_report_path,
-                    new_report_path,
-                    TO_DELAY_MAPPINGS,
-                    dest_start_row
-                )
-                dest_start_row += delay_transferred  # Update the starting row for the next date
-                delay_transferred_total += delay_transferred
+            # Check if the daily report path exists
+            if not os.path.exists(daily_report_path):
+                error_message = f"File not found: {daily_report_path}. Stopping the transfer process."
+                messagebox.showerror("File Not Found", error_message)
+                break
 
-            transferred_message = f"{delay_transferred_total} rows transferred in total"
-            messagebox.showinfo("Success", transferred_message)
-
-            # Clean up empty rows after transfer
-            delete_empty_rows(
+            delay_transferred = transfer_data_to_delay(
+                daily_report_path,
                 new_report_path,
-                "Delays",
-                delay_transferred_total + 2  # 2 accounted for the title and the Headers column
-            )
-
-            # Turn the button green after the transfer
-            delay_button.configure(bootstyle="success")
-
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
-
-
-    def on_confirm_cancel():
-
-        if len(cp_dates) == 0:
-            error_message = "Please select the Construction plan and try again!"
-            messagebox.showerror("File Not Found", error_message)
-            top_level.destroy()
-            return
-
-        # Variables
-        dest_start_row = 3
-
-        # Define paths and filenames
-        main_paths = define_related_paths()
-        date_str = cp_dates[0]
-        formatted_str_date, dt_date, week_num = extract_date(date_str)
-        delay_path = main_paths["Delays"] / str(dt_date.year)
-
-        # Set the delay filename and path
-        delay_filename = f"Weekly Delay Table WW{week_num}.xlsx"
-        new_report_path = delay_path / delay_filename
-        template_in_dest = delay_path / WEEKLY_DELAY_TEMPLATE
-
-        # Check if the file exists
-        if not new_report_path.exists():
-            # File doesn't exist, copy and rename the template
-            templates_path = main_paths["templates"]
-            temp_delay_template_path = templates_path / WEEKLY_DELAY_TEMPLATE
-
-            print(f'Copying template to: {delay_path.name}')
-            shutil.copy(temp_delay_template_path, delay_path)
-
-            if template_in_dest.exists():
-                template_in_dest.rename(new_report_path)
-            else:
-                print(f'Template not found in {delay_path}!')
-        else:
-            print(f'{new_report_path} already exists, skipping template copying.')
-
-        try:
-            cancelled_transferred = transfer_data_to_cancelled(
-                wp_path,
-                new_report_path,
-                TO_CANCELLED_MAPPING,
+                TO_DELAY_MAPPINGS,
                 dest_start_row
             )
+            dest_start_row += delay_transferred  # Update the starting row for the next date
+            delay_transferred_total += delay_transferred
 
-            # Updated message to show how many rows were transferred
-            transferred_message = f"{cancelled_transferred} rows transferred." if cancelled_transferred is not None \
-                else "No rows were transferred."
-            messagebox.showinfo("Success", transferred_message)
+        # Message box with the results
+        transferred_message = (
+            f"{delay_transferred_total} rows were transferred to 'Delays' and "
+            f"\n{cancelled_transferred} rows were transferred to 'Cancellations'"
+        )
+        messagebox.showinfo("Success", transferred_message)
 
-            delete_empty_rows(
-                new_report_path,
-                "Cancellations",
-                cancelled_transferred + 2  # 2 accounted for the title and the Headers column
-            )
+        # Clean up empty rows
+        delete_empty_rows(
+            new_report_path,
+            "Delays",
+            delay_transferred_total + 2  # 2 accounted for the title and the Headers column
+        )
 
-            # Turn the button green after the transfer
-            cancelled_button.configure(bootstyle="success")
+        delete_empty_rows(
+            new_report_path,
+            "Cancellations",
+            cancelled_transferred + 2  # 2 accounted for the title and the Headers column
+        )
 
-        except Exception as e:
-            messagebox.showerror("Error", f"An error occurred: {e}")
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
-    daily_report_path = None
 
-    top_level = ttk.Toplevel()
-    top_level.withdraw()
-    top_level.title("Transfer to Weekly Delay Table")
-    top_level.geometry('350x170')
-    top_level.resizable(False, False)
-    top_level.place_window_center()
-    top_level.deiconify()
+def create_and_transfer_to_wkly_ciim():
 
-    # Frames
-    transfer_frame = ttk.Frame(master=top_level)
-    transfer_frame.pack(fill="both", expand=True)
-    transfer_frame.rowconfigure(0, weight=1)
-    transfer_frame.columnconfigure(0, weight=1)
-    transfer_top_frame = ttk.Frame(master=transfer_frame)
-    transfer_top_frame.grid(row=0, column=0, sticky="nsew")
-    transfer_toolbar = ttk.Frame(master=transfer_frame)
-    transfer_toolbar.grid(row=1, column=0, sticky="nsew")
+    # Ensure that  the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
 
-    # Label & Separator
-    ttk.Label(transfer_top_frame, text="Select to which Sheet you want to transfer", anchor=CENTER).pack(pady=35)
-    separator = ttk.Separator(transfer_toolbar)
-    separator.pack(fill=X)
+    # Process the first date
+    first_date = cp_dates[0]
+    formatted_date, dt_date, week_num = extract_date(first_date)
+    wkly_ciim_folder_path = wp_path.parent
+    wkly_ciim_filename = f"CIIM Report Table WW{week_num}.xlsx"
+    new_report_path = wkly_ciim_folder_path / wkly_ciim_filename
 
-    # Buttons
-    delay_button = ttk.Button(transfer_toolbar, text="Delays", command=on_confirm_delay, width=8)
-    delay_button.pack(side=RIGHT, padx=5, pady=10)
-    cancelled_button = ttk.Button(transfer_toolbar, text="Cancelled", command=on_confirm_cancel, width=8)
-    cancelled_button.pack(side=RIGHT, padx=5, pady=10)
-    cancel_button = ttk.Button(transfer_toolbar, text="Cancel", command=top_level.destroy, width=8, style="secondary")
-    cancel_button.pack(side=RIGHT, padx=5, pady=10)
+    main_paths = define_related_paths()
+    temp_path = main_paths["templates"]
+    daily_temp_path = temp_path / DAILY_REPORT_TEMPLATE
+    wkly_temp_in_dest = wkly_ciim_folder_path / DAILY_REPORT_TEMPLATE
 
-    # Binding function
-    def on_button_click(event):
-        button = event.widget
-        if button == delay_button:
-            on_confirm_delay()
-        elif button == cancelled_button:
-            on_confirm_cancel()
+    # Check if the file exists and copy template if necessary
+    if not new_report_path.exists():
+        shutil.copy(daily_temp_path, wkly_ciim_folder_path)
+        wkly_temp_in_dest.rename(new_report_path)
+        print(f'Copying template to: {wkly_ciim_folder_path.name} and renaming to {new_report_path.name}')
 
-    # Bind all children of transfer_toolbar to on_button_click
-    for child in transfer_toolbar.winfo_children():
-        child.bind("<Button-1>", on_button_click)
+    # Check if the file is locked
+    if is_file_locked(new_report_path):
+        messagebox.showwarning(
+            "File Locked",
+            f"Please close {new_report_path.name} and try again."
+        )
+        return
+
+    # Open the report file
+    wb = load_workbook(filename=new_report_path)
+    ws = wb.active
+
+    ws.cell(row=1, column=1, value=new_report_path.name[:-5])
+
+    # Find the starting row for data in the destination file
+    start_row = 4
+    total_rows = 0  # Counter for total rows
+
+    # Process the rest of the dates
+    for date in cp_dates:
+        formatted_date, dt_date, week_num = extract_date(date)
+        daily_report_path = extract_src_path_from_date(dt_date)
+
+        if not os.path.exists(daily_report_path):
+            error_message = f"File not found: {daily_report_path}. Skipping this date."
+            messagebox.showwarning("File Not Found", error_message)
+            continue  # Skip this date and continue with the next
+
+        # Read the data without skipping rows
+        df = pd.read_excel(daily_report_path, skiprows=2)
+
+        # Remove any empty rows in the DataFrame
+        df.dropna(how='all', inplace=True)
+
+        if df.empty:
+            continue  # Skip if no data is available
+
+        # Write the DataFrame to the destination file starting from the next available row
+        for r_idx, row in df.iterrows():
+            for c_idx, value in enumerate(row):
+                ws.cell(row=start_row + r_idx, column=c_idx + 1, value=value)
+
+        # Update the total rows counter
+        total_rows += len(df)
+
+        # Update the starting row for the next batch of data
+        start_row += len(df)
+
+    # Remove empty rows from the destination sheet
+    for row in ws.iter_rows(min_row=4, max_row=ws.max_row):
+        if all(cell.value is None for cell in row):
+            ws.delete_rows(row[0].row)
+
+    # Show the total number of activities in a message box
+    messagebox.showinfo("Activities Processed", f"Total number of activities: {total_rows}")
+
+    # Save the workbook
+    wb.save(new_report_path)
+    print(f'Weekly CIIM Report saved to: {new_report_path}')
+
+    ask_more = messagebox.askyesno("Continue?", f"Do you want to continue?")
+    if not ask_more:
+        return  # Exit the function if the user does not want to overwrite
+
+    else:
+        select_const_wp()
+        create_and_transfer_to_wkly_ciim()
+
+def update_menu_labels():
+    """
+    Update the menu labels based on the current value of ww_var.
+    """
+    week_num = ww_var.get()
+    construction_wp = wp_path.name[:-5]
+    # Print for debugging
+    print(f"Updating Menu Labels with Week Number: {week_num}")
+
+    # Update Create Menu
+    create_menu.entryconfig(0, label=f"CIIM Report Table WW{week_num}")
+    create_menu.entryconfig(1, label=f"Weekly Delay Table WW{week_num}")
+
+    # Update Open Menu
+    open_menu.entryconfig(0, label=construction_wp)
 
 
 # ========================= Root config =========================
 # Set DPI Awareness
 enable_high_dpi_awareness()
 
-app = ttk.Window(themename="litera")
+app = ttk.Window(themename="darkly")
 app.resizable(0, 0)
 app.title("CIIM Manager")
 
@@ -959,8 +1014,8 @@ app.title("CIIM Manager")
 app.grid_columnconfigure(0, weight=1)
 app.grid_rowconfigure(0, weight=1)
 # Geometry
-app_width = 790
-app_height = 530
+app_width = 750
+app_height = 500
 screen_width = app.winfo_screenwidth()
 screen_height = app.winfo_screenheight()
 x = (screen_width / 2) - (app_width / 2)
@@ -971,8 +1026,8 @@ app.geometry(f"{app_width}x{app_height}+{int(x)}+{int(y)}")
 style = ttk.Style()
 style.configure("TButton", font=("Roboto", 9, "bold"), takefocus=False)
 style.configure("TMenubutton", font=("Roboto", 9, "bold"))
-style.configure("light.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
-style.configure("light.Treeview", rowheight=20, indent=50)
+style.configure("dark.Treeview.Heading", font=("Roboto", 9, "bold"), rowheight=40)
+style.configure("dark.Treeview", rowheight=20, indent=50)
 
 # =========================== Variables ===========================
 current_frame = None
@@ -984,6 +1039,7 @@ wp_var = StringVar()
 current_combobox_index = StringVar()
 # Lists and associated data
 cp_dates = []
+ww_var = IntVar()
 # Miscellaneous variables
 DAILY_REPORT_TEMPLATE = "CIIM Report Table - Template.xlsx"
 WEEKLY_DELAY_TEMPLATE = "Weekly Delay Table - Template.xlsx"
@@ -1074,22 +1130,22 @@ for key, path in images_dict.items():
     photo_image = ImageTk.PhotoImage(image)
     photo_images[key] = photo_image
 
-# ====================== Side Frame ======================
+# ====================== Home Side Frame ======================
 side_frame = ttk.Frame(master=app, bootstyle="dark")
 side_frame.pack(side=LEFT, fill=Y)
 
-tab1_empty = ttk.Label(master=side_frame, bootstyle="inverse.dark")
-tab1_empty.pack(fill='x', pady=35)
+side_frame_empty = ttk.Label(master=side_frame, bootstyle="inverse.dark")
+side_frame_empty.pack(fill='x', pady=40)
 
-tab1_button = ttk.Button(master=side_frame, command=lambda: show_frame("Home"), bootstyle="dark",
+home_button = ttk.Button(master=side_frame, command=lambda: show_frame("Home"), bootstyle="dark",
                          image=photo_images["Home"], takefocus=False)
-tab1_button.pack(fill='x', ipady=7)
+home_button.pack(fill='x', ipady=7)
 
 
-tab3_button = ttk.Button(master=side_frame, command=lambda: show_frame("Folder"),
+folder_frame_button = ttk.Button(master=side_frame, command=lambda: show_frame("Folder"),
                          bootstyle="dark",
                          image=photo_images["Folder"], takefocus=False)
-tab3_button.pack(fill='x', ipady=7)
+folder_frame_button.pack(fill='x', ipady=7)
 
 distlist_button = ttk.Button(master=side_frame, command=lambda: display_dist_list(),
                              bootstyle="dark",
@@ -1106,22 +1162,16 @@ faults_button = ttk.Button(master=side_frame, text="Faults", command=lambda: sho
                           image=photo_images["Faults"], takefocus=False)
 faults_button.pack(fill='x', ipady=7)
 
-transfer_button = ttk.Button(side_frame, text="Transfer Works", command=open_options_window,
-                             image=photo_images["Transfer"], bootstyle="dark", takefocus=False)
-transfer_button.pack(fill='x', ipady=7)
+# ====================== Home Frame ======================
 
-# ====================== Tab 1 - Home ======================
+home_frame = frames["Home"]
+home_frame.columnconfigure(0, weight=0)
+home_frame.columnconfigure(1, weight=1)
+home_frame.rowconfigure(1, weight=1)
 
-tab1 = frames["Home"]
-
-tab1.columnconfigure(0, weight=0)
-tab1.columnconfigure(1, weight=1)
-tab1.rowconfigure(1, weight=1)
-
-# ====================== Tab 1 - Top Frame ======================
-top_frame = ttk.Frame(master=tab1)
+# Top Frame
+top_frame = ttk.Frame(master=home_frame)
 top_frame.grid(row=1, column=1, sticky="nsew", padx=5, pady=5)
-
 
 # Packing the hour and day labels at the top first
 hour_label = ttk.Label(master=top_frame, text="12:49", font="digital-7 120")
@@ -1130,17 +1180,22 @@ hour_label.pack(anchor="center")
 day_label = ttk.Label(master=top_frame, text="Saturday 22/01/2023", font="digital-7 35", style="secondary")
 day_label.pack(padx=5, pady=5)
 
-# ====================== Tab 1 - Bottom Frame ======================
-bottom_frame = ttk.Frame(master=tab1)
+# Bottom Frame
+bottom_frame = ttk.Frame(master=home_frame)
 bottom_frame.grid(row=2, column=1, sticky='nsew', padx=5, pady=5)
 
-home_browse_button = ttk.Button(master=bottom_frame, text="Change", command=select_const_wp, width=10,
+home_browse_button = ttk.Button(master=bottom_frame, text="Select", command=select_const_wp, width=8,
                                 takefocus=False, bootstyle="secondary")
 home_browse_button.pack(anchor='sw', side='left', pady=5)
+path_entry = ttk.Entry(master=bottom_frame, textvariable=wp_var, bootstyle="danger")
+path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
+
+
+# Menus
 
 # Open files menu
-open_mb = ttk.Menubutton(top_frame, text="Open file", width=10)
-open_mb.pack(pady=50)
+open_mb = ttk.Menubutton(top_frame, text="Open", width=8)
+open_mb.pack(pady=30)
 
 open_menu = ttk.Menu(open_mb, tearoff=0)
 
@@ -1150,12 +1205,20 @@ open_menu.add_command(label="Procedure", command=open_procedure_file)
 
 open_mb["menu"] = open_menu
 
-open_menu.config(relief="raised")
 
-path_entry = ttk.Entry(master=bottom_frame, textvariable=wp_var)
-path_entry.pack(anchor='s', side='left', fill='x', expand=True, pady=5)
+# Create files menu
+create_mb = ttk.Menubutton(top_frame, text="Create", width=8, bootstyle = "Success")
+create_mb.pack()
 
-# ====================== Tab 1 -Phones frame ======================
+create_menu = ttk.Menu(open_mb, tearoff=0)
+
+create_menu.add_command(label="CIIM Report Table", command=create_and_transfer_to_wkly_ciim)
+create_menu.add_command(label="Weekly Delay Table", command=create_and_transfer_to_wkly_delay)
+
+create_mb["menu"] = create_menu
+
+
+# ====================== Phones frame ======================
 is_phone_tree_populated = False  # it will ensure it runs only once and not each time we launch the frame
 
 phones_frame = frames["Phone"]
@@ -1168,7 +1231,7 @@ phone_tree_scroll = ttk.Scrollbar(phones_frame, style="round")
 phone_tree_scroll.grid(row=0, column=1, sticky="nsw")
 
 phone_tree = ttk.Treeview(phones_frame, cursor="hand2", yscrollcommand=phone_tree_scroll.set,
-                          style="light.Treeview", padding=10)
+                          style="dark.Treeview", padding=10)
 phone_tree.grid(row=0, column=0, sticky="nsew")
 
 organization = {
@@ -1185,7 +1248,7 @@ phone_tree_scroll.config(command=phone_tree.yview)
 # Bindings
 phone_tree.bind('<Double-1>', copy_to_clipboard)
 
-# ====================== Tab 1 - Dist. list frame ======================
+# ====================== Dist. list frame ======================
 def get_dates():
     today = dt.date.today()
     tonight = today
@@ -1258,7 +1321,7 @@ for column, (label_text, template) in enumerate(templates.items()):
     ToolTip(button, text="Click for template/emails", delay=500)
 
 
-# ====================== Tab 1 - Faults ======================
+# ====================== Faults Frame ======================
 
 # Function to generate the email content
 def generate_faults_email():
@@ -1393,48 +1456,32 @@ email_label.grid(row=6, column=0, columnspan=2, sticky="w", pady=5, padx=5)
 email_text_widget = Text(faults_frame, height=13, width=70)
 email_text_widget.grid(row=7, column=0, columnspan=2, sticky="ew", pady=5, padx=5)
 
-# ====================== Tab 3 - Folder ======================
+# ====================== Folder Frame ======================
 
-tab3 = frames["Folder"]
+folder_frame = frames["Folder"]
 
-tab3.rowconfigure(0, weight=1)
-tab3.columnconfigure(0, weight=1)
-tab3.columnconfigure(2, weight=1)
+folder_frame.rowconfigure(0, weight=1)
+folder_frame.columnconfigure(0, weight=1)
 
-tab3_mid_frame = ttk.Frame(master=tab3)
-tab3_mid_frame.grid(row=0, column=1, sticky='nsew')
 
-select_folder_label = ttk.Label(master=tab3_mid_frame, text="   Select date:  ")
+folder_frame_top = ttk.Frame(master=folder_frame)
+folder_frame_top.grid(row=0, column=0, sticky='nsew')
+
+select_folder_label = ttk.Label(master=folder_frame_top, text="   Select date:  ")
 select_folder_label.grid(row=0, column=0, padx=5, pady=43, sticky="e")
 
-cal_entry = ttk.DateEntry(tab3_mid_frame, bootstyle="danger", dateformat="%Y-%m-%d")
+cal_entry = ttk.DateEntry(folder_frame_top, bootstyle="danger", dateformat="%Y-%m-%d")
 cal_entry.grid(row=0, column=1, padx=5, pady=5, sticky="w")
 
-discipline_frame = ttk.Frame(master=tab3_mid_frame)
-discipline_frame.grid(row=1, column=0, sticky="nsew", columnspan=2, pady=40)
-fc_ocs_label = ttk.Label(master=discipline_frame, text="Num of OCS works")
-fc_ocs_label.grid(row=0, column=0, sticky="e", padx=5, pady=30, )
-fc_scada_label = ttk.Label(master=discipline_frame, text="Num of SCADA works")
-fc_scada_label.grid(row=1, column=0, sticky="e", padx=5, pady=15)
 
-ocs_entry = ttk.Entry(master=discipline_frame, width=10)
-ocs_entry.grid(row=0, column=1, sticky="e", padx=5)
-ocs_entry_val = add_numeric_validation(ocs_entry, when="key")
-ocs_entry.configure(validatecommand=ocs_entry_val)
+folder_frame_toolbar = ttk.Frame(master=folder_frame)
+folder_frame_toolbar.grid(row=1, columnspan=3, sticky="nsew")
 
-scada_entry = ttk.Entry(master=discipline_frame, width=10)
-scada_entry.grid(row=1, column=1, sticky="e", padx=5, pady=15)
-scada_entry_val = add_numeric_validation(scada_entry, when="key")
-ocs_entry.configure(validatecommand=scada_entry_val)
-
-tab3_toolbar = ttk.Frame(master=tab3)
-tab3_toolbar.grid(row=1, columnspan=3, sticky="nsew")
-
-tab2_seperator = ttk.Separator(tab3_toolbar, orient="horizontal")
+tab2_seperator = ttk.Separator(folder_frame_toolbar, orient="horizontal")
 tab2_seperator.pack(side=TOP, fill=BOTH)
 
 # Button
-create_button = ttk.Button(master=tab3_toolbar, text="Create", command=create_folders, width=10)
+create_button = ttk.Button(master=folder_frame_toolbar, text="Create", command=create_folders, width=10)
 create_button.pack(side=RIGHT, padx=10, pady=10)
 
 
