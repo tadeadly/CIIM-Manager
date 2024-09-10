@@ -3,7 +3,7 @@ import sys
 import re
 import shutil
 import datetime as dt
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from tkinter import *
 from tkinter import filedialog, messagebox
@@ -58,9 +58,6 @@ def select_const_wp():
         # If no path was selected, simply do nothing
 
         path_entry.configure(bootstyle="secondary")
-        open_menu.configure(state="enabled")
-        create_menu.configure(state="enabled")
-
 
 
     return wp_path if path else None
@@ -142,7 +139,7 @@ def extract_src_path_from_date(dt_date):
     Constructs source file paths based on provided date information.
     """
 
-    paths, c_formatted_dates = derive_paths_from_date(dt_date)
+    paths, c_formatted_dates,_  = derive_paths_from_date(dt_date)
 
     # Creating the CIIM Daily Report Table file path
     daily_report_name = derive_report_name(c_formatted_dates["dot"])
@@ -360,6 +357,7 @@ def derive_paths_from_date(dt_date):
     paths = {
         "year": const_files_path /  c_year,
         "week": const_files_path / c_year / f"WW{c_week}",
+        "n_week": const_files_path / c_year / f"WW{c_week + 1}",
         "day": const_files_path
                / c_year
                / f"WW{c_week}"
@@ -367,7 +365,7 @@ def derive_paths_from_date(dt_date):
 
     }
 
-    return paths, c_formatted_dates
+    return paths, c_formatted_dates, c_week
 
 
 
@@ -380,13 +378,33 @@ def create_folders():
     # Prompt user to select a date
     str_date = cal_entry.entry.get()
     dt_date = datetime.strptime(str_date, '%Y-%m-%d')
-    paths, c_formatted_dates = derive_paths_from_date(dt_date)
+    paths, c_formatted_dates, c_week = derive_paths_from_date(dt_date)
+
 
     # Ensure that  the Work plan was selected
     if len(cp_dates) == 0:
         error_message = "Please select the Construction plan and try again!"
         messagebox.showwarning("File Not Found", error_message)
         return
+
+
+    # Check if the week folder exists and create the next week folder if necessary
+    if c_week < 52:
+        n_week_path = paths["n_week"]
+        n_week_arc_path = n_week_path / "Archive"
+        if not n_week_path.exists():
+            try:
+                n_week_path.mkdir(parents=True, exist_ok=True)
+                n_week_arc_path.mkdir(parents=True, exist_ok=True)
+            except Exception as e:
+                error_message = f"An error occurred while creating the directory: {e}"
+                messagebox.showerror("Directory Creation Error", error_message)
+        else:
+            print(f"Directory already exists: {n_week_path}")
+    else:
+        print(f"No need to create directory for week number {c_week} as it is not less than or equal to max week 52")
+
+
 
     day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
     if paths["day"].exists():
