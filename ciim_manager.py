@@ -451,7 +451,8 @@ def create_folders():
         "Nominations",
         "Pictures",
         "Worklogs",
-        "Toolboxes",
+        "Toolboxes"
+        "Other",
     ]
     for folder in folders_to_create:
         (paths["day"] / folder).mkdir(exist_ok=True)
@@ -1020,6 +1021,71 @@ def update_menu_labels():
     open_menu.entryconfig(0, label=construction_wp)
 
 
+def naming_conversion():
+    # Prompt user to select a date
+    str_date = cal_entry.entry.get()
+    dt_date = datetime.strptime(str_date, '%Y-%m-%d')
+
+    # Format date for naming convention
+    formatted_date = dt_date.strftime('%Y-%m-%d')
+
+    # Define paths and folders
+    paths, c_formatted_dates, c_week = derive_paths_from_date(dt_date)
+
+    # Ensure that the Work plan was selected
+    if len(cp_dates) == 0:
+        error_message = "Please select the Construction plan and try again!"
+        messagebox.showwarning("File Not Found", error_message)
+        return
+
+    day_message_not_exist = f'{c_formatted_dates["compact"]} folder does not exists'
+    if not paths["day"].exists():
+        messagebox.showwarning("Folder does not Exists", f"{day_message_not_exist}\nPlease create the folder for that date first")
+        return  # Exit the function if the user does not want to overwrite
+
+    # Define the folders and their corresponding suffixes
+    folder_suffixes = {
+        "Nominations": "N",
+        "Pictures": "P",
+        "Worklogs": "W",
+        "Toolboxes": "T",
+    }
+
+    # Define regex pattern to check if file name already has the correct pattern
+    pattern = re.compile(r'.*_\d{4}-\d{2}-\d{2}_[A-Z]')
+
+    # Define naming conversion function
+    def rename_file(file_path, folder_name):
+        # Extract file extension
+        file_extension = file_path.suffix
+        # Determine suffix based on folder name
+        suffix = folder_suffixes.get(folder_name, "FILE")
+        # Define new name based on convention
+        base_new_name = f"EP_NAME_{formatted_date}_{suffix}"
+        # Generate new file name with a unique suffix if needed
+        new_name = base_new_name + file_extension
+        new_file_path = file_path.with_name(new_name)
+        counter = 1
+        # Check if file with the same name already exists and generate a unique name
+        while new_file_path.exists():
+            new_name = f"{base_new_name}_{counter}{file_extension}"
+            new_file_path = file_path.with_name(new_name)
+            counter += 1
+        return new_file_path
+
+    # Loop through folders and rename files
+    for folder in folder_suffixes.keys():
+        folder_path = paths["day"] / folder
+        if folder_path.exists() and folder_path.is_dir():
+            for file in folder_path.iterdir():
+                if file.is_file():
+                    # Check if file name matches the pattern
+                    if not pattern.match(file.name):
+                        new_file_path = rename_file(file, folder)
+                        file.rename(new_file_path)
+                        print(f"Renamed {file} to {new_file_path}")
+
+
 # ========================= Root config =========================
 # Set DPI Awareness
 enable_high_dpi_awareness()
@@ -1501,6 +1567,9 @@ tab2_seperator.pack(side=TOP, fill=BOTH)
 # Button
 create_button = ttk.Button(master=folder_frame_toolbar, text="Create", command=create_folders, width=10)
 create_button.pack(side=RIGHT, padx=10, pady=10)
+
+nc_button = ttk.Button(master=folder_frame_toolbar, text="Naming Convension", command=naming_conversion, width=17, style='secondary')
+nc_button.pack(side=LEFT, padx=10, pady=10)
 
 
 show_frame("Home")
