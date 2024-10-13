@@ -3,7 +3,7 @@ import sys
 import re
 import shutil
 import datetime as dt
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from tkinter import *
 from tkinter import filedialog, messagebox
@@ -19,19 +19,18 @@ from ttkbootstrap.utility import enable_high_dpi_awareness
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
     base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base_path, relative_path)
 
+    return os.path.join(base_path, relative_path)
 
 
 def define_related_paths():
     """Defines all paths relative to the global CIIM_FOLDER_PATH."""
 
     paths = {
-        "Construction": base_path / "Construction Management",
-        "Delays": base_path / "Delays and Cancellations" ,
-        "faults": base_path / "Fault Reports" / "Fault Report Database.xlsx",
-        "templates": base_path / "Templates",
-        "procedure": base_path / "Protocols" / "CIIM Procedure.xlsx",
+        "Construction": base_path / "CIIM - General",
+        "Faults": base_path / "CIIM - Faults" / "Fault Report Database.xlsx",
+        "Templates": base_path / "CIIM - Guidelines" / "Templates",
+        "Procedure": base_path / "CIIM - Guidelines" / "Protocols" / "CIIM Procedure.xlsx",
     }
 
     return paths
@@ -58,7 +57,7 @@ def select_const_wp():
         # If no path was selected, simply do nothing
 
         path_entry.configure(bootstyle="secondary")
-
+        print(wp_path)
 
     return wp_path if path else None
 
@@ -111,7 +110,6 @@ def process_date_cell(cell):
     """
     Processes a given cell's value to extract the date
     """
-
     if not cell.value:
         return None
 
@@ -138,7 +136,6 @@ def extract_src_path_from_date(dt_date):
     """
     Constructs source file paths based on provided date information.
     """
-
     paths, c_formatted_dates,_  = derive_paths_from_date(dt_date)
 
     # Creating the CIIM Daily Report Table file path
@@ -238,7 +235,6 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
         transferred_rows += 1
 
     dest_wb.save(destination_file)
-    dest_wb.close()
     src_wb.close()
 
     return transferred_rows
@@ -249,7 +245,6 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
     Transfers data from a source file to a destination file based on column mappings provided.
     Skips rows where 'Observations' column contains 'cancel'.
     """
-
     # Load the workbooks and worksheets
     src_wb = load_workbook(source_file, read_only=True)
     src_ws = src_wb.active
@@ -320,7 +315,6 @@ def transfer_data_to_delay(source_file, destination_file, mappings, dest_start_r
 
     # Save and close workbooks
     dest_wb.save(destination_file)
-    dest_wb.close()
     src_wb.close()
 
     return transferred_rows
@@ -355,13 +349,13 @@ def derive_paths_from_date(dt_date):
     }
 
     paths = {
-        "year": const_files_path /  c_year,
-        "week": const_files_path / c_year / f"WW{c_week}",
-        "n_week": const_files_path / c_year / f"WW{c_week + 1}",
+        "year": const_files_path /  f"{c_year}",
+        "week": const_files_path / f"{c_year}" / f"{c_week}",
+        "n_week": const_files_path / f"{c_year}" / f"{c_week + 1}",
         "day": const_files_path
-               / c_year
-               / f"WW{c_week}"
-               / f"{c_year[-2:]}{c_month}{c_day}",
+               / f"{c_year}"
+               / f"{c_week}"
+               / "Daily Reports"
 
     }
 
@@ -374,7 +368,7 @@ def derive_report_name(date, template="CIIM Report Table {}.xlsx"):
     return template.format(date)
 
 
-def create_folders():
+def create_daily_report():
     # Prompt user to select a date
     str_date = cal_entry.entry.get()
     dt_date = datetime.strptime(str_date, '%Y-%m-%d')
@@ -387,75 +381,59 @@ def create_folders():
         messagebox.showwarning("File Not Found", error_message)
         return
 
-
-    # Check if the week folder exists and create the next week folder if necessary
-    if c_week < 52:
-        n_week_path = paths["n_week"]
-        n_week_arc_path = n_week_path / "Archive"
-        if not n_week_path.exists():
-            try:
-                n_week_path.mkdir(parents=True, exist_ok=True)
-                n_week_arc_path.mkdir(parents=True, exist_ok=True)
-            except Exception as e:
-                error_message = f"An error occurred while creating the directory: {e}"
-                messagebox.showerror("Directory Creation Error", error_message)
-        else:
-            print(f"Directory already exists: {n_week_path}")
-    else:
-        print(f"No need to create directory for week number {c_week} as it is not less than or equal to max week 52")
-
-
-
-    day_message_exist = f'{c_formatted_dates["compact"]} folder already exists'
-    if paths["day"].exists():
-        overwrite = messagebox.askyesno("Folder Exists", f"{day_message_exist}\nDo you want to overwrite?")
-        if not overwrite:
-            return  # Exit the function if the user does not want to overwrite
+    # # Check if the week folder exists and create the next week folder if necessary
+    # if c_week < 52:
+    #     n_week_path = paths["n_week"]
+    #     if not n_week_path.exists():
+    #         try:
+    #             n_week_path.mkdir(parents=True, exist_ok=True)
+    #         except Exception as e:
+    #             error_message = f"An error occurred while creating the directory: {e}"
+    #             messagebox.showerror("Directory Creation Error", error_message)
+    #     else:
+    #         print(f"Directory already exists: {n_week_path}")
+    # else:
+    #     print(f"No need to create directory for week number {c_week} as it is not less than or equal to max week 52")
 
     # If the folder does not exist or the user chooses to overwrite, continue
     main_paths = define_related_paths()
 
     # Creating main paths
-    for key in ["year", "week", "day"]:
+    for key in ["year", "week"]:
         Path(paths[key]).mkdir(parents=True, exist_ok=True)
-
-    if paths["day"].exists():
-        day_created_message = (
-            f'{c_formatted_dates["compact"]} folder was created successfully!'
-        )
-        messagebox.showinfo(None, day_created_message)
-
-    # Derive report name and set paths
-    ciim_daily_report = derive_report_name(c_formatted_dates["dot"])
-    new_report_path = paths["day"] / ciim_daily_report
-    template_in_dest = paths["day"] / DAILY_REPORT_TEMPLATE
-
-    # Copy and rename the template only if the report file does not already exist
-    if not new_report_path.exists():
-        templates_path = main_paths["templates"]
-        fc_ciim_template_path = templates_path / DAILY_REPORT_TEMPLATE
-
-        print(f'Copying template to: {paths["day"]}')
-        shutil.copy(fc_ciim_template_path, paths["day"])
-
-        if template_in_dest.exists():
-            template_in_dest.rename(new_report_path)
-        else:
-            print(f'Template not found in {paths["day"]}!')
-    else:
-        print(f'{new_report_path} already exists, skipping template copying.')
-
 
     # Creating other necessary folders
     folders_to_create = [
         "Nominations",
         "Pictures",
         "Worklogs",
-        "Toolboxes"
+        "Toolboxes",
+        "Daily Reports",
+        "Weekly Reports",
         "Other",
     ]
     for folder in folders_to_create:
-        (paths["day"] / folder).mkdir(exist_ok=True)
+        (paths["week"] / folder).mkdir(exist_ok=True)
+
+    # Derive report name and set paths
+    ciim_daily_report = derive_report_name(c_formatted_dates["dot"])
+    new_report_path = paths["day"] / ciim_daily_report
+
+    # Check if the report file already exists
+    if new_report_path.exists():
+        overwrite = messagebox.askyesno("File Exists", f"{ciim_daily_report} already exists. Do you want to overwrite?")
+        if not overwrite:
+            return  # Exit the function if the user does not want to overwrite
+
+    # Copy the template only if the report file does not already exist or if the user chose to overwrite
+    if not new_report_path.exists():
+        templates_path = main_paths["Templates"]
+        fc_ciim_template_path = templates_path / DAILY_REPORT_TEMPLATE
+
+        print(f'Copying template to: {new_report_path}')
+        shutil.copy(fc_ciim_template_path, new_report_path)
+    else:
+        print(f"{new_report_path} already exists and was not copied.")
 
     # Handle data report writing and copying
     if Path(wp_path).parent != Path(paths["week"]):
@@ -468,7 +446,6 @@ def create_folders():
         c_formatted_dates["slash"],
         TO_DAILY_REPORT_MAPPINGS,
     )
-
 
 
 def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4):
@@ -492,6 +469,10 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
     usecols_value = list(mappings.keys())
     df = pd.read_excel(src_path, skiprows=1, usecols=usecols_value)
 
+    if df.empty:
+        messagebox.showwarning("No Data", "No data found for the selected date.")
+        return
+
     df["Date"] = pd.to_datetime(df["Date"], format="%d/%m/%Y", dayfirst=True, errors="coerce")
     target_df = df[df["Date"] == date_time]
 
@@ -508,12 +489,12 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
         ws.cell(row=1, column=1, value=report_name[:-5])
 
         # Write headers (using the mappings values as headers)
-        for col, header in enumerate(mappings.values(), 2):  # Starting from column B
+        for col, header in enumerate(mappings.values(), 1):
             ws.cell(row=start_row - 1, column=col, value=header)
 
         # Write data
         for row_idx, (index, row_data) in enumerate(target_df.iterrows(), start=start_row):
-            for col_idx, (src_header, dest_header) in enumerate(mappings.items(), 2):  # Starting from column B
+            for col_idx, (src_header, dest_header) in enumerate(mappings.items(), 1):
                 ws.cell(row=row_idx, column=col_idx, value=row_data[src_header])
             total_works_num = row_idx
 
@@ -522,9 +503,9 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
             for row_idx in range(total_works_num + 1, ws.max_row + 1):
                 ws.delete_rows(total_works_num + 1)
 
-        # Iterate through column N (col=14) starting from row 4
+        # Iterate through (col=13) starting from row 4
         for row_idx in range(4, ws.max_row + 1):
-            cell_value = ws.cell(row=row_idx, column=14).value
+            cell_value = ws.cell(row=row_idx, column=13).value
 
             if isinstance(cell_value, float):
                 # Convert float value to a string
@@ -534,7 +515,7 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
                 # Replace the cell content with text
                 ws.cell(
                     row=row_idx,
-                    column=14,
+                    column=13,
                     value=""
                 )
                 planned_works_num += 1
@@ -544,15 +525,16 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
                             message=f"Num of planned works (excluding cancelled): {planned_works_num}"
                                     f"\nNum of cancelled works: {cancelled_works_num}")
 
+        wb.save(report_path)
+
     except ValueError as e:
         messagebox.showerror("Error", f"Failed to read Excel file: {e}")
     except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
     finally:
-        wb.save(report_path)
-        print(f"{report_name} has been updated and saved.")
-        wb.close()
+        if 'wb' in locals():
+            wb.close()  # Ensure the workbook is closed properly
 
 
 def show_frame(frame_name):
@@ -590,12 +572,12 @@ def display_dist_list():
 
     show_frame("Dist list")
     paths = define_related_paths()
-    proc_path = paths["procedure"]
+    distlist_path = paths["Templates"].parent / "Distribution List.xlsx"
 
     if not dist_list_populated:
         try:
             # Read the Excel file into a pandas DataFrame
-            df = pd.read_excel(proc_path, sheet_name='Dist. List', usecols='A, C, E')
+            df = pd.read_excel(distlist_path, usecols='A:C')
 
             # Iterate over the DataFrame and the text widgets at the same time
             for col, text_widget in zip(df.columns, text_widgets):
@@ -785,12 +767,11 @@ def open_wp_file():
 
 def open_faults():
     paths = define_related_paths()
-    faults_path = paths["faults"]
+    faults_path = paths["Faults"]
     os.startfile(faults_path)
 
 
 def delete_empty_rows(file_path, sheet_name, num_rows_to_keep):
-    from openpyxl import load_workbook
 
     # Load the workbooks and worksheets
     wb = load_workbook(file_path)
@@ -811,7 +792,7 @@ def delete_empty_rows(file_path, sheet_name, num_rows_to_keep):
         print(f"{sheet_name}: Deleted rows after row {rows_to_delete_start}")
 
     wb.save(file_path)
-    wb.close()
+
 
 
 def create_and_transfer_to_wkly_delay():
@@ -833,20 +814,19 @@ def create_and_transfer_to_wkly_delay():
         main_paths = define_related_paths()
         date_str = cp_dates[0]
         formatted_str_date, dt_date, week_num = extract_date(date_str)
-        delay_path = main_paths["Delays"] / str(dt_date.year)
+        delay_path = wp_path.parent / "Weekly Reports"
 
         # Set the delay filename and path
         wkly_delay_filename = f"Weekly Delay Table WW{week_num}.xlsx"
         new_report_path = delay_path / wkly_delay_filename
-        templates_path = main_paths["templates"]
+        templates_path = main_paths["Templates"]
         wkly_delay_temp_path = templates_path / WEEKLY_DELAY_TEMPLATE
-        wkly_temp_in_dest = delay_path / WEEKLY_DELAY_TEMPLATE
+
 
         # Check if the file exists and copy template if necessary
         if not new_report_path.exists():
-            shutil.copy(wkly_delay_temp_path, delay_path)
-            wkly_temp_in_dest.rename(new_report_path)
-            print(f'Copying template to: {delay_path.name} and renaming to {new_report_path.name}')
+            shutil.copy(wkly_delay_temp_path, new_report_path)
+            print(f'Copying template to: {new_report_path.name} and renaming to {new_report_path.name}')
 
         else:
             file_message_exist = f'{wkly_delay_filename[:-5]} already exists'
@@ -874,7 +854,7 @@ def create_and_transfer_to_wkly_delay():
             # Check if the daily report path exists
             if not os.path.exists(daily_report_path):
                 error_message = f"File not found: {daily_report_path}. Stopping the transfer process."
-                messagebox.showerror("File Not Found", error_message)
+                messagebox.showwarning("File Not Found", error_message)
                 break
 
             delay_transferred = transfer_data_to_delay(
@@ -910,6 +890,7 @@ def create_and_transfer_to_wkly_delay():
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
+
 def create_and_transfer_to_wkly_ciim():
 
     # Ensure that  the Work plan was selected
@@ -921,20 +902,18 @@ def create_and_transfer_to_wkly_ciim():
     # Process the first date
     first_date = cp_dates[0]
     formatted_date, dt_date, week_num = extract_date(first_date)
-    wkly_ciim_folder_path = wp_path.parent
+    wkly_ciim_folder_path = wp_path.parent / "Weekly Reports"
     wkly_ciim_filename = f"CIIM Report Table WW{week_num}.xlsx"
     new_report_path = wkly_ciim_folder_path / wkly_ciim_filename
 
     main_paths = define_related_paths()
-    temp_path = main_paths["templates"]
+    temp_path = main_paths["Templates"]
     daily_temp_path = temp_path / DAILY_REPORT_TEMPLATE
-    wkly_temp_in_dest = wkly_ciim_folder_path / DAILY_REPORT_TEMPLATE
 
     # Check if the file exists and copy template if necessary
     if not new_report_path.exists():
-        shutil.copy(daily_temp_path, wkly_ciim_folder_path)
-        wkly_temp_in_dest.rename(new_report_path)
-        print(f'Copying template to: {wkly_ciim_folder_path.name} and renaming to {new_report_path.name}')
+        shutil.copy(str(daily_temp_path), str(new_report_path))
+        print(f'Copied template to: {new_report_path.name}')
 
     # Check if the file is locked
     if is_file_locked(new_report_path):
@@ -945,7 +924,7 @@ def create_and_transfer_to_wkly_ciim():
         return
 
     # Open the report file
-    wb = load_workbook(filename=new_report_path)
+    wb = load_workbook(filename=new_report_path, keep_links=True)
     ws = wb.active
 
     ws.cell(row=1, column=1, value=new_report_path.name[:-5])
@@ -1022,68 +1001,104 @@ def update_menu_labels():
 
 
 def naming_conversion():
-    # Prompt user to select a date
-    str_date = cal_entry.entry.get()
-    dt_date = datetime.strptime(str_date, '%Y-%m-%d')
+    date = cp_dates[3]
+    formatted_date, dt_date, week_num = extract_date(date)
 
-    # Format date for naming convention
-    formatted_date = dt_date.strftime('%Y-%m-%d')
-
-    # Define paths and folders
+    # Assuming paths and other data are correctly defined earlier in your code
     paths, c_formatted_dates, c_week = derive_paths_from_date(dt_date)
 
-    # Ensure that the Work plan was selected
     if len(cp_dates) == 0:
-        error_message = "Please select the Construction plan and try again!"
-        messagebox.showwarning("File Not Found", error_message)
+        messagebox.showwarning("File Not Found", "Please select the Construction plan and try again!")
         return
 
-    day_message_not_exist = f'{c_formatted_dates["compact"]} folder does not exists'
-    if not paths["day"].exists():
-        messagebox.showwarning("Folder does not Exists", f"{day_message_not_exist}\nPlease create the folder for that date first")
-        return  # Exit the function if the user does not want to overwrite
+    if not paths["week"].exists():
+        messagebox.showwarning("Folder does not Exist",
+                               f"{c_formatted_dates['compact']} folder does not exist. Please create the folder for that date first.")
+        return
 
-    # Define the folders and their corresponding suffixes
     folder_suffixes = {
-        "Nominations": "N",
-        "Pictures": "P",
         "Worklogs": "W",
-        "Toolboxes": "T",
     }
 
-    # Define regex pattern to check if file name already has the correct pattern
-    pattern = re.compile(r'.*_\d{4}-\d{2}-\d{2}_[A-Z]')
+    # Define the regex patterns
+    pattern_old = re.compile(r'^\d{1,2}_[A-Z]{2,}_\d{4}-\d{2}-\d{2}(_[A-Z])?\.jpg$')
+    pattern_new = re.compile(r'^\d{1,2}_[A-Z]{2,}_\d{4}-\d{2}-\d{2}\.jpg$')  # Example for new format
 
-    # Define naming conversion function
     def rename_file(file_path, folder_name):
-        # Extract file extension
         file_extension = file_path.suffix
-        # Determine suffix based on folder name
         suffix = folder_suffixes.get(folder_name, "FILE")
-        # Define new name based on convention
-        base_new_name = f"EP_NAME_{formatted_date}_{suffix}"
-        # Generate new file name with a unique suffix if needed
-        new_name = base_new_name + file_extension
-        new_file_path = file_path.with_name(new_name)
+
+        matched_pattern = None
+
+        # Check against both patterns
+        if pattern_old.match(file_path.name):
+            matched_pattern = 'old'
+        elif pattern_new.match(file_path.name):
+            matched_pattern = 'new'
+
+        if matched_pattern:
+            parts = file_path.stem.split('_')
+            if len(parts) < 3:  # Ensure we have at least 3 parts
+                print(f"Skipping file {file_path.name}: unexpected format.")
+                return None
+
+            ep_code = parts[0]  # e.g., '17'
+            nm_code = parts[1]  # e.g., 'RG'
+            date_part = parts[2]  # e.g., '2024-09-08'
+
+            new_name = f"{date_part}_{nm_code}_{ep_code}_{suffix}"
+        else:
+            print(f"File {file_path.name} does not match any expected pattern.")
+            return None
+
+        new_file_path = file_path.with_name(new_name + file_extension)
         counter = 1
-        # Check if file with the same name already exists and generate a unique name
+
         while new_file_path.exists():
-            new_name = f"{base_new_name}_{counter}{file_extension}"
-            new_file_path = file_path.with_name(new_name)
+            new_name = f"{new_name}_{counter}"
+            new_file_path = file_path.with_name(new_name + file_extension)
             counter += 1
+
         return new_file_path
 
-    # Loop through folders and rename files
     for folder in folder_suffixes.keys():
-        folder_path = paths["day"] / folder
+        folder_path = paths["week"] / folder
         if folder_path.exists() and folder_path.is_dir():
             for file in folder_path.iterdir():
-                if file.is_file():
-                    # Check if file name matches the pattern
-                    if not pattern.match(file.name):
-                        new_file_path = rename_file(file, folder)
+                if file.is_file() and (pattern_old.match(file.name) or pattern_new.match(file.name)):
+                    print(f"Processing file: {file.name}")
+                    new_file_path = rename_file(file, folder)
+                    if new_file_path:
                         file.rename(new_file_path)
                         print(f"Renamed {file} to {new_file_path}")
+                else:
+                    print(f"File {file.name} skipped: does not match expected pattern.")
+
+
+def delete_empty_folders():
+    deleted_folders = []  # List to hold the paths of deleted folders
+    # Prompt the user to select a folder
+    folder_path = filedialog.askdirectory(title="Select a folder to delete empty subfolders")
+    if not folder_path:
+        return
+
+    # Traverse the directory tree in reverse order
+    for dirpath, dirnames, filenames in os.walk(folder_path, topdown=False):
+        for dirname in dirnames:
+            dir_to_check = os.path.join(dirpath, dirname)
+            try:
+                os.rmdir(dir_to_check)
+                deleted_folders.append(dir_to_check)  # Add to the list of deleted folders
+            except OSError:
+                pass  # Ignore directories that couldn't be deleted
+
+    # Create a message to display the result
+    if deleted_folders:
+        message = f"Deleted {len(deleted_folders)} empty folder(s)."
+        messagebox.showinfo("Deletion Result", message)
+    else:
+        message = "No empty folders to delete."
+        messagebox.showinfo("Deletion Result", message)
 
 
 # ========================= Root config =========================
@@ -1126,7 +1141,7 @@ cp_dates = []
 ww_var = IntVar()
 # Miscellaneous variables
 DAILY_REPORT_TEMPLATE = "CIIM Report Table - Template.xlsx"
-WEEKLY_DELAY_TEMPLATE = "Weekly Delay Table - Template.xlsx"
+WEEKLY_DELAY_TEMPLATE = "Weekly Delay Table - Template v2.xlsx"
 
 # List of Delay reasons
 delay_reasons = [
@@ -1172,6 +1187,7 @@ TO_DELAY_MAPPINGS = {
     "Actual Start": "Actual Start",
     "Planned End": "Planned End",
     "Actual End": "Actual End",
+    "Mid Shift Delay": "Mid Shift Delay",
 }
 
 TO_CANCELLED_MAPPING = {
@@ -1301,6 +1317,10 @@ create_menu.add_command(label="Weekly Delay Table", command=create_and_transfer_
 
 create_mb["menu"] = create_menu
 
+del_button = ttk.Button(master=top_frame, text="Delete Empty", command=delete_empty_folders, width=15,
+                                takefocus=False, bootstyle="secondary")
+del_button.pack(anchor="sw")
+
 
 # ====================== Phones frame ======================
 is_phone_tree_populated = False  # it will ensure it runs only once and not each time we launch the frame
@@ -1362,10 +1382,10 @@ for i in range(4):
 
 templates = {
     "Preview":
-               "Dear All,"
+               "Hi Yoni,"
                "\n\nFind attached the draft of the CIIM Report.",
     "Not Approved": "                 Email:"
-                    "\n\nHi Randall,"
+                    "\n\nHi Natan,"
                     "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
                     "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in "
                     "the file."
@@ -1565,11 +1585,11 @@ tab2_seperator = ttk.Separator(folder_frame_toolbar, orient="horizontal")
 tab2_seperator.pack(side=TOP, fill=BOTH)
 
 # Button
-create_button = ttk.Button(master=folder_frame_toolbar, text="Create", command=create_folders, width=10)
+create_button = ttk.Button(master=folder_frame_toolbar, text="Create", command=create_daily_report, width=10)
 create_button.pack(side=RIGHT, padx=10, pady=10)
 
-nc_button = ttk.Button(master=folder_frame_toolbar, text="Naming Convension", command=naming_conversion, width=17, style='secondary')
-nc_button.pack(side=LEFT, padx=10, pady=10)
+# nc_button = ttk.Button(master=folder_frame_toolbar, text="Naming Convension", command=naming_conversion, width=17, style='secondary')
+# nc_button.pack(side=LEFT, padx=10, pady=10)
 
 
 show_frame("Home")
