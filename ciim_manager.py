@@ -30,7 +30,9 @@ def define_related_paths():
         "Construction": base_path / "CIIM - General",
         "Faults": base_path / "CIIM - Faults" / "Fault Report Database.xlsx",
         "Templates": base_path / "CIIM - Guidelines" / "Templates",
+        "Guidelines": base_path / "CIIM - Guidelines",
         "Procedure": base_path / "CIIM - Guidelines" / "Protocols" / "CIIM Procedure.xlsx",
+        "Tracking": base_path / "CIIM - Tracking",
     }
 
     return paths
@@ -217,7 +219,7 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
             if not observation_value or "cancel" not in observation_value.lower():
                 continue
             # It will skip the rows that were cancelled by OCS/Scada/TS
-            if any(word in observation_value.lower() for word in ["scada", "ocs", "ocs-l", "ocs-d"]):
+            if any(word in observation_value.lower() for word in ["by scada", "by ocs", "by ocs-l", "by ocs-d"]):
                 print(f"Skipping row {row_num} due to observation value: {observation_value}")
                 continue
 
@@ -503,7 +505,7 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
             for row_idx in range(total_works_num + 1, ws.max_row + 1):
                 ws.delete_rows(total_works_num + 1)
 
-        # Iterate through (col=13) starting from row 4
+        # Iterate through column 13 (Activity Description) starting from row 4
         for row_idx in range(4, ws.max_row + 1):
             cell_value = ws.cell(row=row_idx, column=13).value
 
@@ -519,6 +521,15 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
                     value=""
                 )
                 planned_works_num += 1
+
+        # Remove patterns from columns 10 (Foreman Name) and 11 (Team Leader Name)
+        for row_idx in range(4, ws.max_row + 1):
+            for col in [10, 11]:  # Check columns 10 and 11
+                cell_value = ws.cell(row=row_idx, column=col).value
+                if isinstance(cell_value, str):
+                    # Remove the pattern "(...)" at the end
+                    cleaned_value = re.sub(r'\s*\(.*?\)\s*$', '', cell_value)
+                    ws.cell(row=row_idx, column=col, value=cleaned_value)
 
         cancelled_works_num = total_works_num - planned_works_num - 3  # (-3) because it starts from that row num
         messagebox.showinfo(title="Information",
@@ -572,7 +583,7 @@ def display_dist_list():
 
     show_frame("Dist list")
     paths = define_related_paths()
-    distlist_path = paths["Templates"].parent / "Distribution List.xlsx"
+    distlist_path = paths["Guidelines"] / "Protocols" / "Distribution List.xlsx"
 
     if not dist_list_populated:
         try:
@@ -614,7 +625,7 @@ def display_phone_list():
     if not is_phone_tree_populated:
         try:
             phone_tree.heading("#0", text="Phone Numbers")
-            df = pd.read_excel(wp_path, sheet_name="SEMI List", usecols="B:E, G")
+            df = pd.read_excel(wp_path, sheet_name="SEMI List", usecols="A, C, E, G")
 
             # Populate "Team Leaders" from DataFrame
             for department in organization["Team Leaders"]:
@@ -814,10 +825,10 @@ def create_and_transfer_to_wkly_delay():
         main_paths = define_related_paths()
         date_str = cp_dates[0]
         formatted_str_date, dt_date, week_num = extract_date(date_str)
-        delay_path = wp_path.parent / "Weekly Reports"
+        delay_path = main_paths["Tracking"]
 
         # Set the delay filename and path
-        wkly_delay_filename = f"Weekly Delay Table WW{week_num}.xlsx"
+        wkly_delay_filename = f"Delays & Cancellations WW{week_num}.xlsx"
         new_report_path = delay_path / wkly_delay_filename
         templates_path = main_paths["Templates"]
         wkly_delay_temp_path = templates_path / WEEKLY_DELAY_TEMPLATE
@@ -890,6 +901,98 @@ def create_and_transfer_to_wkly_delay():
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 
+def create_and_transfer_to_daily_delay(date_str):
+    """
+    Transfers data to both the 'Cancellations' and 'Delays' sheets in the destination file.
+    """
+    try:
+        # Ensure that  the Work plan was selected
+        if len(cp_dates) == 0:
+            error_message = "Please select the Construction plan and try again!"
+            messagebox.showwarning("File Not Found", error_message)
+            return
+
+        # Variables for destination file paths and names
+        delay_transferred_total = 0
+        dest_start_row = 3
+        main_paths = define_related_paths()
+        delay_path = main_paths["Tracking"]
+
+        date = datetime.strptime(date_str, "%Y-%m-%d")
+        # Now format the date as dd.mm.yy
+        formatted_date = date.strftime("%d.%m.%y")  # Format the date to 'dd.mm.yy'
+
+        # Set the delay filename and path
+        daily_delay_filename = f"Delays & Cancellations {formatted_date}.xlsx"
+        new_report_path = delay_path / daily_delay_filename
+        templates_path = main_paths["Templates"]
+        daily_delay_temp_path = templates_path / DAILY_DELAYS_CANC_TEMPLATE
+
+
+        # Check if the file exists and copy template if necessary
+        if not new_report_path.exists():
+            shutil.copy(daily_delay_temp_path, new_report_path)
+            print(f'Copying template to: {new_report_path.name} and renaming to {new_report_path.name}')
+
+        else:
+            file_message_exist = f'{daily_delay_filename[:-5]} already exists'
+            overwrite = messagebox.askyesno("File Exists", f"{file_message_exist}\nDo you want to overwrite?")
+
+            if not overwrite:
+                return  # Exit the function if the user does not want to overwrite
+
+            else:
+                print(f'Overwriting {new_report_path}...')
+
+        # Transfer data to Cancellations Sheet
+        cancelled_transferred = transfer_data_to_cancelled(
+            wp_path,
+            new_report_path,
+            TO_CANCELLED_MAPPING,
+            dest_start_row
+        )
+
+        # Transfer data to Delays Sheet
+        formatted_str_date, dt_date, week_num = extract_date(date_str)
+        daily_report_path = extract_src_path_from_date(dt_date)
+
+        # Check if the daily report path exists
+        if not os.path.exists(daily_report_path):
+            error_message = f"File not found: {daily_report_path}. Stopping the transfer process."
+            messagebox.showwarning("File Not Found", error_message)
+            return
+
+        delay_transferred = transfer_data_to_delay(
+            daily_report_path,
+            new_report_path,
+            TO_DELAY_MAPPINGS,
+            dest_start_row
+        )
+        dest_start_row += delay_transferred  # Update the starting row for the next date
+        delay_transferred_total += delay_transferred
+
+        # Message box with the results
+        transferred_message = (
+            f"{delay_transferred_total} rows were transferred to 'Delays' and "
+            f"\n{cancelled_transferred} rows were transferred to 'Cancellations'"
+        )
+        messagebox.showinfo("Success", transferred_message)
+
+        # Clean up empty rows
+        delete_empty_rows(
+            new_report_path,
+            "Delays",
+            delay_transferred_total + 2  # 2 accounted for the title and the Headers column
+        )
+
+        delete_empty_rows(
+            new_report_path,
+            "Cancellations",
+            cancelled_transferred + 2  # 2 accounted for the title and the Headers column
+        )
+
+    except Exception as e:
+        messagebox.showerror("Error", f"An error occurred: {e}")
 
 def create_and_transfer_to_wkly_ciim():
 
@@ -983,18 +1086,38 @@ def create_and_transfer_to_wkly_ciim():
         select_const_wp()
         create_and_transfer_to_wkly_ciim()
 
+
 def update_menu_labels():
     """
     Update the menu labels based on the current value of ww_var.
     """
+    global cp_dates
+
+    if not cp_dates:
+        print("No dates to update in the menu.")
+        return
+
+    # Remove existing date items before adding new ones
+    create_menu.delete(0, END)  # Clears the menu
+
     week_num = ww_var.get()
     construction_wp = wp_path.name[:-5]
     # Print for debugging
     print(f"Updating Menu Labels with Week Number: {week_num}")
 
-    # Update Create Menu
-    create_menu.entryconfig(0, label=f"CIIM Report Table WW{week_num}")
-    create_menu.entryconfig(1, label=f"Weekly Delay Table WW{week_num}")
+    create_menu.add_command(label=f"CIIM Report Table WW{week_num}", command=create_and_transfer_to_wkly_ciim)
+    create_menu.add_command(label=f"Delays & Cancellations WW{week_num}", command=create_and_transfer_to_wkly_delay)
+
+    for i, date in enumerate(cp_dates, start=2):  # Start the index from 2
+        f_date = datetime.strptime(date, "%Y-%m-%d")  # Assuming the format is 'YYYY-MM-DD'
+        # Now format the date as dd.mm.yy
+        formatted_date = f_date.strftime("%d.%m.%y")  # Format the date to 'dd.mm.yy'
+
+        # Use a default argument in the lambda to capture the current value of `date`
+        create_menu.add_command(
+            label=f"Delays & Cancellations {formatted_date}",
+            command=lambda date=date: create_and_transfer_to_daily_delay(date)  # Capture date correctly
+        )
 
     # Update Open Menu
     open_menu.entryconfig(0, label=construction_wp)
@@ -1142,6 +1265,7 @@ ww_var = IntVar()
 # Miscellaneous variables
 DAILY_REPORT_TEMPLATE = "CIIM Report Table - Template.xlsx"
 WEEKLY_DELAY_TEMPLATE = "Weekly Delay Table - Template v2.xlsx"
+DAILY_DELAYS_CANC_TEMPLATE = "Daily Delay & Cancellations - Template.xlsx"
 
 # List of Delay reasons
 delay_reasons = [
@@ -1252,10 +1376,10 @@ distlist_button = ttk.Button(master=side_frame, command=lambda: display_dist_lis
                              image=photo_images["Dist list"], takefocus=False)
 distlist_button.pack(fill='x', ipady=7)
 
-phone_button = ttk.Button(master=side_frame, text="Phones", command=lambda: display_phone_list(),
-                          bootstyle="dark",
-                          image=photo_images["Phone"], takefocus=False)
-phone_button.pack(fill='x', ipady=7)
+# phone_button = ttk.Button(master=side_frame, text="Phones", command=lambda: display_phone_list(),
+#                           bootstyle="dark",
+#                           image=photo_images["Phone"], takefocus=False)
+# phone_button.pack(fill='x', ipady=7)
 
 faults_button = ttk.Button(master=side_frame, text="Faults", command=lambda: show_frame("Faults"),
                           bootstyle="dark",
@@ -1306,14 +1430,12 @@ open_menu.add_command(label="Procedure", command=open_procedure_file)
 open_mb["menu"] = open_menu
 
 
+
 # Create files menu
 create_mb = ttk.Menubutton(top_frame, text="Create", width=8, bootstyle = "Success")
 create_mb.pack()
 
 create_menu = ttk.Menu(open_mb, tearoff=0)
-
-create_menu.add_command(label="CIIM Report Table", command=create_and_transfer_to_wkly_ciim)
-create_menu.add_command(label="Weekly Delay Table", command=create_and_transfer_to_wkly_delay)
 
 create_mb["menu"] = create_menu
 
@@ -1387,16 +1509,14 @@ templates = {
     "Not Approved": "                 Email:"
                     "\n\nHi Natan,"
                     "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
-                    "\nPlease add the WSP supervisors, ISR working charges and ISR communication supervisors names in "
-                    "the file."
+                    "\nPlease add the Supervisors names in the attached file."
                     "\n\n\n              Whatsapp Message"
-                    "\n\nGood afternoon,\nAttached is the updated work file for tonight (dd.mm.yy) and "
+                    "\n\nGood afternoon,\nAttached is the work plan for tonight (dd.mm.yy) and "
                     "tomorrow morning (dd.mm.yy)."
                     "\nPlease note that the hours listed are the starting hours of the T.P. Please keep in touch with "
                     "your managers about the time you should be in the field."
-                    "\nGood luck."
-                    "\n*TPs and supervisors in charge will be updated by ISR as soon as possible.*",
-    "Approved": "Dear All,"
+                    "\nGood luck.",
+    "Approved": "Hi All,"
                 "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning ("
                 "dd.mm.yy)."
 }
@@ -1451,17 +1571,17 @@ def generate_faults_email():
     if department == "OCS":
         email_content += "ja.sierra@syneox.com\naturk@gruposemi.com\n\n"
         email_content += "OCS Fault report No. {}\n\n".format(fault_number)
-        email_content += "Dear All,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
+        email_content += "Hi All,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
 
     elif department == "SCADA":
         email_content += "yshoshany@gruposemi.com\nmmiran@gruposemi.com\ngmaskalchi@gruposemi.com\n\n"
         email_content += "SCADA Fault report No. {}\n\n".format(fault_number)
-        email_content += "Dear All,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
+        email_content += "Hi All,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
 
     elif department == "TS":
         email_content += "aturk@gruposemi.com\nCC:\narodriguez@gruposemi.com\nygutmacher@gruposemi.com\n\n"
         email_content += "TS Fault report No. {}\n\n".format(fault_number)
-        email_content += "Dear All,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
+        email_content += "Hi Ali,\n\nAttached is the Fault Report No. {}.\n".format(fault_number)
 
     # Update the text widgets with the generated email content
     confirmation_text_widget.delete(1.0, END)
