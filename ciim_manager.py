@@ -32,7 +32,7 @@ def define_related_paths():
         "Templates": base_path / "CIIM - Guidelines" / "Templates",
         "Guidelines": base_path / "CIIM - Guidelines",
         "Procedure": base_path / "CIIM - Guidelines" / "Protocols" / "CIIM Procedure.xlsx",
-        "Tracking": base_path / "CIIM - Tracking",
+        "Tracking": base_path / "CIIM - Admin Records" / "CIIM" / "Performance Tracking 2025"
     }
 
     return paths
@@ -100,7 +100,7 @@ def extract_unique_dates_from_worksheet(sheet_name):
     Extract unique dates from a given worksheet column
     """
     unique_dates = set()
-    for cell in sheet_name["D"]:
+    for cell in sheet_name["C"]:
         date_value_str = process_date_cell(cell)
         if date_value_str:
             unique_dates.add(date_value_str)
@@ -219,9 +219,9 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
             if not observation_value or "cancel" not in observation_value.lower():
                 continue
             # It will skip the rows that were cancelled by OCS/Scada/TS
-            if any(word in observation_value.lower() for word in ["by scada", "by ocs", "by ocs-l", "by ocs-d"]):
-                print(f"Skipping row {row_num} due to observation value: {observation_value}")
-                continue
+            # if any(word in observation_value.lower() for word in ["by scada", "by ocs", "by ocs-l", "by ocs-d"]):
+            #     print(f"Skipping row {row_num} due to observation value: {observation_value}")
+            #     continue
 
         for src_col, dest_col in mappings.items():
 
@@ -327,22 +327,26 @@ def calculate_week_num(date):
     adjusted_date = date + dt.timedelta(days=1) if date.weekday() == 6 else date
 
     # Use isocalendar to get the ISO week number
-    iso_year, iso_week, iso_weekday = adjusted_date.isocalendar()
+    _, iso_week, _ = adjusted_date.isocalendar()
 
-    return iso_week
+    # Return the week number as a zero-padded string
+    return f"{iso_week:02d}"
+
 
 
 def derive_paths_from_date(dt_date):
     """
     Constructs various related paths based on a given date.
     """
-
     main_paths = define_related_paths()
     const_files_path = main_paths["Construction"]
-
     c_day, c_month, c_year = [dt_date.strftime(pattern) for pattern in ["%d", "%m", "%Y"]]
-
     c_week = calculate_week_num(dt_date)
+
+    # Adjust the ISO year
+    iso_year = dt_date.year
+    if c_week == "01" and dt_date.month == 12:
+        iso_year += 1
 
     c_formatted_dates = {
         "slash": f"{c_day}/{c_month}/{c_year[-2:]}",
@@ -351,16 +355,15 @@ def derive_paths_from_date(dt_date):
     }
 
     paths = {
-        "year": const_files_path /  f"{c_year}",
-        "week": const_files_path / f"{c_year}" / f"{c_week}",
-        "n_week": const_files_path / f"{c_year}" / f"{c_week + 1}",
+        "year": const_files_path / f"{iso_year}",
+        "week": const_files_path / f"{iso_year}" / f"{c_week}",
         "day": const_files_path
-               / f"{c_year}"
+               / f"{iso_year}"
                / f"{c_week}"
                / "Daily Reports"
-
     }
 
+    # Return all required values
     return paths, c_formatted_dates, c_week
 
 
@@ -437,10 +440,10 @@ def create_daily_report():
     else:
         print(f"{new_report_path} already exists and was not copied.")
 
-    # Handle data report writing and copying
-    if Path(wp_path).parent != Path(paths["week"]):
-        print("Not copying works to the selected date")
-        return
+    # # Handle data report writing and copying
+    # if Path(wp_path).parent != Path(paths["week"]):
+    #     print("Not copying works to the selected date")
+    #     return
 
     write_data_to_excel(
         wp_path,
@@ -505,14 +508,16 @@ def write_data_to_excel(src_path, dt_date, formatted_date, mappings, start_row=4
             for row_idx in range(total_works_num + 1, ws.max_row + 1):
                 ws.delete_rows(total_works_num + 1)
 
-        # Iterate through column 13 (Activity Description) starting from row 4
+        # Input file
+        # Iterate through  column 11 (Work Description) starting from row 4
         for row_idx in range(4, ws.max_row + 1):
             cell_value = ws.cell(row=row_idx, column=13).value
 
             if isinstance(cell_value, float):
-                # Convert float value to a string
+                # Convert float value to a string1
                 cell_value = str(cell_value)
 
+            # Output file
             if not re.search(r"Cancel*", cell_value, re.IGNORECASE):
                 # Replace the cell content with text
                 ws.cell(
@@ -588,7 +593,7 @@ def display_dist_list():
     if not dist_list_populated:
         try:
             # Read the Excel file into a pandas DataFrame
-            df = pd.read_excel(distlist_path, usecols='A:C')
+            df = pd.read_excel(distlist_path, usecols='A:B')
 
             # Iterate over the DataFrame and the text widgets at the same time
             for col, text_widget in zip(df.columns, text_widgets):
@@ -1123,6 +1128,7 @@ def update_menu_labels():
     open_menu.entryconfig(0, label=construction_wp)
 
 
+
 def naming_conversion():
     date = cp_dates[3]
     formatted_date, dt_date, week_num = extract_date(date)
@@ -1140,46 +1146,28 @@ def naming_conversion():
         return
 
     folder_suffixes = {
-        "Worklogs": "W",
+        "Nominations": ["N1", "N2"]
     }
 
-    # Define the regex patterns
-    pattern_old = re.compile(r'^\d{1,2}_[A-Z]{2,}_\d{4}-\d{2}-\d{2}(_[A-Z])?\.jpg$')
-    pattern_new = re.compile(r'^\d{1,2}_[A-Z]{2,}_\d{4}-\d{2}-\d{2}\.jpg$')  # Example for new format
+    # Regex to match file patterns
+    pattern = re.compile(r'^(\d{1,2})_([A-Z]{2,})_(\d{4}-\d{2}-\d{2})_(N[1-2])\.(jpg|jpeg|pdf)$')
 
     def rename_file(file_path, folder_name):
-        file_extension = file_path.suffix
-        suffix = folder_suffixes.get(folder_name, "FILE")
-
-        matched_pattern = None
-
-        # Check against both patterns
-        if pattern_old.match(file_path.name):
-            matched_pattern = 'old'
-        elif pattern_new.match(file_path.name):
-            matched_pattern = 'new'
-
-        if matched_pattern:
-            parts = file_path.stem.split('_')
-            if len(parts) < 3:  # Ensure we have at least 3 parts
-                print(f"Skipping file {file_path.name}: unexpected format.")
-                return None
-
-            ep_code = parts[0]  # e.g., '17'
-            nm_code = parts[1]  # e.g., 'RG'
-            date_part = parts[2]  # e.g., '2024-09-08'
-
-            new_name = f"{date_part}_{nm_code}_{ep_code}_{suffix}"
-        else:
-            print(f"File {file_path.name} does not match any expected pattern.")
+        match = pattern.match(file_path.name)
+        if not match:
+            print(f"File {file_path.name} does not match the expected pattern.")
             return None
 
-        new_file_path = file_path.with_name(new_name + file_extension)
+        ep_code, nm_code, date_part, suffix, extension = match.groups()
+        new_name = f"{date_part}_{nm_code}_{ep_code}_{suffix}.{extension}"
+
+        new_file_path = file_path.with_name(new_name)
         counter = 1
 
+        # Ensure no overwrites
         while new_file_path.exists():
-            new_name = f"{new_name}_{counter}"
-            new_file_path = file_path.with_name(new_name + file_extension)
+            new_name = f"{date_part}_{nm_code}_{ep_code}_{suffix}_{counter}.{extension}"
+            new_file_path = file_path.with_name(new_name)
             counter += 1
 
         return new_file_path
@@ -1188,14 +1176,15 @@ def naming_conversion():
         folder_path = paths["week"] / folder
         if folder_path.exists() and folder_path.is_dir():
             for file in folder_path.iterdir():
-                if file.is_file() and (pattern_old.match(file.name) or pattern_new.match(file.name)):
+                if file.is_file() and pattern.match(file.name):
                     print(f"Processing file: {file.name}")
                     new_file_path = rename_file(file, folder)
                     if new_file_path:
                         file.rename(new_file_path)
-                        print(f"Renamed {file} to {new_file_path}")
+                        print(f"Renamed {file.name} to {new_file_path}")
                 else:
                     print(f"File {file.name} skipped: does not match expected pattern.")
+
 
 
 def delete_empty_folders():
@@ -1285,14 +1274,14 @@ TO_DAILY_REPORT_MAPPINGS = {
     "Date": "Date",
     "T.P Start [Time]": "Planned Start",
     "T.P End [Time]": "Planned End",
-    "T.P Start [K.P]": "Start KP",
-    "T.P End [K.P]": "End KP",
+    "EP": "EP",
     "ISR Start Section [Name]": "Start Section",
     "ISR  End Section [Name]": "End Section",
-    "EP": "EP",
+    "T.P Start [K.P]": "Start KP",
+    "T.P End [K.P]": "End KP",
     "Foremen [Israel]": "Foreman Name",
     "Team Leader\nName (Phone)": "Team Leader Name",
-    "Work Description (Baseline)": "Activity Description",
+    "Work Description": "Activity Description",
     "Observations": "Activity Summary"
 }
 
@@ -1321,7 +1310,7 @@ TO_CANCELLED_MAPPING = {
     "T.P End [Time]": "Planned End",
     "EP": "EP",
     "Team Leader\nName (Phone)": "Team leader Name",
-    "Work Description (Baseline)": "Activity Description",
+    "Work Description": "Activity Description",
     "Observations": "Cancellation Cause",
 }
 
@@ -1498,27 +1487,24 @@ dist_list_populated = False  # it will ensure it runs only once and not each tim
 dist_frame = frames["Dist list"]
 
 # Configure the frame to give equal weight to all columns
-for i in range(4):
+for i in range(3):
     dist_frame.columnconfigure(i, weight=1)
     dist_frame.rowconfigure(1, weight=1)
 
 templates = {
     "Preview":
-               "Hi Yoni,"
-               "\n\nFind attached the draft of the CIIM Report.",
-    "Not Approved": "                 Email:"
-                    "\n\nHi Natan,"
-                    "\n\nFind attached the updated plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
-                    "\nPlease add the Supervisors names in the attached file."
+               "Hi Omer,"
+               "\n\nFind attached the draft of the CIIM Report."
+    "\n\nPlease note that the attached is a draft and may contain missing information or require further updates or clarification.",
+    "Work plan": "                 Email:"
+                    "\n\nHi Shay and Eetai,"
+                    "\n\nThese are the updates to the work plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
                     "\n\n\n              Whatsapp Message"
                     "\n\nGood afternoon,\nAttached is the work plan for tonight (dd.mm.yy) and "
                     "tomorrow morning (dd.mm.yy)."
-                    "\nPlease note that the hours listed are the starting hours of the T.P. Please keep in touch with "
-                    "your managers about the time you should be in the field."
+                    "\nPlease note that the hours listed are the starting hours of the TP."
+                    "\nPlease keep in touch with your managers about the time you should be in the field."
                     "\nGood luck.",
-    "Approved": "Hi All,"
-                "\n\nPlease find the approved Construction Plan for tonight (dd.mm.yy) and tomorrow morning ("
-                "dd.mm.yy)."
 }
 
 templates = populate_templates_with_dates(templates)
@@ -1708,8 +1694,8 @@ tab2_seperator.pack(side=TOP, fill=BOTH)
 create_button = ttk.Button(master=folder_frame_toolbar, text="Create", command=create_daily_report, width=10)
 create_button.pack(side=RIGHT, padx=10, pady=10)
 
-# nc_button = ttk.Button(master=folder_frame_toolbar, text="Naming Convension", command=naming_conversion, width=17, style='secondary')
-# nc_button.pack(side=LEFT, padx=10, pady=10)
+nc_button = ttk.Button(master=folder_frame_toolbar, text="Naming Convension", command=naming_conversion, width=17, style='secondary')
+nc_button.pack(side=LEFT, padx=10, pady=10)
 
 
 show_frame("Home")
