@@ -32,7 +32,8 @@ def define_related_paths():
         "Templates": base_path / "CIIM - Guidelines" / "Templates",
         "Guidelines": base_path / "CIIM - Guidelines",
         "Procedure": base_path / "CIIM - Guidelines" / "Protocols" / "CIIM Procedure.xlsx",
-        "Tracking": base_path / "CIIM - Admin Records" / "CIIM" / "Performance Tracking 2025"
+        "Tracking": base_path / "CIIM - Admin Records" / "CIIM" / "Performance Tracking 2025",
+        "Admin":  base_path / "CIIM - Admin Records"
     }
 
     return paths
@@ -65,9 +66,6 @@ def select_const_wp():
 
 
 def update_dates_based_on_file():
-    """
-    Update the unique dates based on the selected construction work plan file.
-    """
     global wp_path, base_path, cp_dates, ww_var
 
     if not wp_path or wp_path == Path("/"):
@@ -85,14 +83,14 @@ def update_dates_based_on_file():
     str_date = cp_dates[0]
     formatted_str_date, dt_date, week_num = extract_date(str_date)
 
-    # Print for debugging
+    # Remove any leading zeros and convert to integer
+    week_num = int(str(week_num).lstrip("0") or "0")
     print(f"Week Number Extracted: {week_num}")
 
     ww_var.set(week_num)
-
     update_menu_labels()
-
     wb.close()
+
 
 
 def extract_unique_dates_from_worksheet(sheet_name):
@@ -211,13 +209,18 @@ def transfer_data_to_cancelled(source_file, destination_file, mappings, dest_sta
                 src_header['Team Leader\nName (Phone)'] - 1,
                 src_header['Date'] - 1,
             ]
+            # List of keywords to check in the observation column
+            keywords = ["cancel", "activity moved", "completed", "done", "postponed"]
+
             if all(not row[idx] for idx in key_column_indexes):
                 continue  # Skip the row as it is considered blank
 
             observation_value = row[observation_col - 1]  # -1 because row is 0-indexed
-            # It will skip the rows that are blank or those who doesn't have 'Cancel' in the Observation cell
-            if not observation_value or "cancel" not in observation_value.lower():
+
+            # Skip rows that are blank or do not contain any of the specified keywords
+            if not observation_value or not any(keyword in observation_value.lower() for keyword in keywords):
                 continue
+
             # It will skip the rows that were cancelled by OCS/Scada/TS
             # if any(word in observation_value.lower() for word in ["by scada", "by ocs", "by ocs-l", "by ocs-d"]):
             #     print(f"Skipping row {row_num} due to observation value: {observation_value}")
@@ -580,15 +583,12 @@ def clock():
 def display_dist_list():
     global dist_list_populated
 
-    # Ensure that  the Work plan was selected
-    if len(cp_dates) == 0:
-        error_message = "Please select the Construction plan and try again!"
-        messagebox.showwarning("File Not Found", error_message)
-        return
-
     show_frame("Dist list")
     paths = define_related_paths()
-    distlist_path = paths["Guidelines"] / "Protocols" / "Distribution List.xlsx"
+    # distlist_path = paths["Admin"] / "Distribution List.xlsx"
+
+    distlist_path = "C:/Users/markpol/Grupo SEMI/CIIM - Admin Records/Distribution List.xlsx"
+
 
     if not dist_list_populated:
         try:
@@ -1253,8 +1253,8 @@ cp_dates = []
 ww_var = IntVar()
 # Miscellaneous variables
 DAILY_REPORT_TEMPLATE = "CIIM Report Table - Template.xlsx"
-WEEKLY_DELAY_TEMPLATE = "Weekly Delay Table - Template v2.xlsx"
-DAILY_DELAYS_CANC_TEMPLATE = "Daily Delay & Cancellations - Template.xlsx"
+WEEKLY_DELAY_TEMPLATE = "Delays & Cancellations - WEEKLY TEMPLATE.xlsx"
+DAILY_DELAYS_CANC_TEMPLATE = "Delays & Cancellations - DAILY TEMPLATE.xlsx"
 
 # List of Delay reasons
 delay_reasons = [
@@ -1493,12 +1493,12 @@ for i in range(3):
 
 templates = {
     "Preview":
-               "Hi Omer,"
-               "\n\nFind attached the draft of the CIIM Report."
+               "Hi all,"
+               "\n\nAttached is the CIIM preview report."
     "\n\nPlease note that the attached is a draft and may contain missing information or require further updates or clarification.",
     "Work plan": "                 Email:"
-                    "\n\nHi Shay and Eetai,"
-                    "\n\nThese are the updates to the work plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
+                    "\n\nHi all,"
+                    "\n\nAttached is the updated work plan for tonight (dd.mm.yy) and tomorrow morning (dd.mm.yy)."
                     "\n\n\n              Whatsapp Message"
                     "\n\nGood afternoon,\nAttached is the work plan for tonight (dd.mm.yy) and "
                     "tomorrow morning (dd.mm.yy)."
